@@ -1,0 +1,32 @@
+# ==============================================================================
+# Dockerfile: Servicio 3 - Qwen3-TTS Zero-Shot Voice Cloning (GCP GPU Acelerado)
+# Servidor: NVIDIA GPU (CUDA 12.1) en GCP Compute Engine
+# ==============================================================================
+
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3-pip \
+    ffmpeg \
+    libsndfile1 \
+    curl \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements_service3.txt .
+RUN pip install --no-cache-dir -r requirements_service3.txt
+
+COPY . .
+
+RUN mkdir -p /tmp/qwen3_clone_outputs /tmp/qwen3_prompts
+
+EXPOSE 8002
+
+CMD ["uvicorn", "main_service3:app", "--host", "0.0.0.0", "--port", "8002"]
