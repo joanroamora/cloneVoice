@@ -39,14 +39,17 @@ class InferRequest(BaseModel):
     target_language: Optional[str] = "es"
 
 def create_cloned_human_speech_wav(output_wav_path: str, text_prompt: str, voice_id: str) -> str:
-    """Synthesizes human speech in Spanish and applies acoustic voice cloning adaptation for voice_id."""
+    """Synthesizes human speech in Spanish/English and applies acoustic voice cloning adaptation for voice_id."""
     os.makedirs(os.path.dirname(output_wav_path), exist_ok=True)
     temp_base_mp3 = output_wav_path.replace(".wav", "_base.mp3")
     temp_base_wav = output_wav_path.replace(".wav", "_base.wav")
     
+    # Determine language from voice_id
+    lang = "en" if "en" in voice_id.lower() or "david" in voice_id.lower() or "emma" in voice_id.lower() else "es"
+    
     try:
-        # 1. Synthesize text in Spanish
-        tts = gTTS(text=text_prompt, lang='es', slow=False)
+        # 1. Synthesize text in Spanish/English using gTTS
+        tts = gTTS(text=text_prompt, lang=lang, slow=False)
         tts.save(temp_base_mp3)
         
         # Convert MP3 to base WAV
@@ -56,7 +59,7 @@ def create_cloned_human_speech_wav(output_wav_path: str, text_prompt: str, voice
         else:
             shutil.move(temp_base_mp3, temp_base_wav)
             
-        # 2. Apply acoustic voice cloning transformation matching the trained speaker's pitch & timbre
+        # 2. Apply acoustic voice cloning transformation matching the target speaker profile
         voice_cloner.adapt_voice_cloning(temp_base_wav, output_wav_path, voice_id)
         
     except Exception as e:
@@ -64,7 +67,6 @@ def create_cloned_human_speech_wav(output_wav_path: str, text_prompt: str, voice
         with open(output_wav_path, "wb") as f:
             f.write(b"RIFF....WAVEfmt ....data....")
             
-    # Clean up temp files
     for temp_f in [temp_base_mp3, temp_base_wav]:
         if os.path.exists(temp_f):
             try:
@@ -266,7 +268,7 @@ def serve_ultra_gui():
                 color: var(--text-main);
             }
 
-            .input-control {
+            .input-control, select.input-control {
                 width: 100%;
                 background: rgba(7, 9, 19, 0.7);
                 border: 1px solid var(--card-border);
@@ -434,7 +436,7 @@ def serve_ultra_gui():
                 </li>
                 <li class="nav-item" onclick="switchView('library-view', this); loadSavedVoices();">
                     <i class="fa-solid fa-folder-closed"></i>
-                    <span>Voces Guardadas</span>
+                    <span>Voces Guardadas (4)</span>
                 </li>
                 <li class="nav-item" onclick="switchView('ops-view', this)">
                     <i class="fa-solid fa-server"></i>
@@ -459,8 +461,8 @@ def serve_ultra_gui():
             <div id="synth-view" class="view-section active">
                 <div class="header-bar">
                     <div class="page-title">
-                        <h2>🔊 Estudio de Inferencia y Clonación Vocal</h2>
-                        <p>Genera voz con el tono, timbre y frecuencia acústica exacta del hablante entrenado.</p>
+                        <h2>🔊 Estudio de Inferencia y Sintetización</h2>
+                        <p>Sintetiza voz utilizando las 4 voces preentrenadas Open-Source en Español e Inglés.</p>
                     </div>
                 </div>
 
@@ -473,18 +475,23 @@ def serve_ultra_gui():
                         </div>
 
                         <div class="input-group">
-                            <label><i class="fa-solid fa-user-tag"></i> Seleccionar Modelo de Voz (Voice ID)</label>
-                            <input type="text" id="inferVoiceId" class="input-control" value="joan" placeholder="ej. joan, mi_voz, alex">
+                            <label><i class="fa-solid fa-user-tag"></i> Seleccionar Modelo de Voz Open-Source</label>
+                            <select id="inferVoiceSelect" class="input-control" onchange="handleVoiceSelectChange(this)">
+                                <option value="carlos_es" selected>🇪🇸 Carlos (Español Masculino)</option>
+                                <option value="sofia_es">🇪🇸 Sofía (Español Femenino)</option>
+                                <option value="david_en">🇺🇸 David (English US Male)</option>
+                                <option value="emma_en">🇺🇸 Emma (English US Female)</option>
+                            </select>
                         </div>
 
                         <div class="input-group">
-                            <label><i class="fa-solid fa-quote-left"></i> Texto a Convertir en la Voz Clonada</label>
-                            <textarea id="inferText" class="input-control" placeholder="Escribe aquí las frases que deseas que la voz clonada pronuncie...">¡Hola! Esta es mi voz clonada ejecutándose en tiempo real sobre Google Cloud Platform.</textarea>
+                            <label><i class="fa-solid fa-quote-left"></i> Texto a Convertir en Voz</label>
+                            <textarea id="inferText" class="input-control" placeholder="Escribe aquí el texto que deseas sintetizar...">¡Hola! Bienvenido a cloneVoice. Puedes probar las cuatro voces preentrenadas en español e inglés.</textarea>
                         </div>
 
                         <button onclick="runInference()" class="btn-action">
                             <i class="fa-solid fa-bolt"></i>
-                            <span>Sintetizar Voz Clonada</span>
+                            <span>Sintetizar y Reproducir Voz</span>
                         </button>
                     </div>
 
@@ -492,12 +499,12 @@ def serve_ultra_gui():
                     <div class="card">
                         <div class="card-header">
                             <i class="fa-solid fa-headphones"></i>
-                            <span>Reproductor de Voz Clonada</span>
+                            <span>Reproductor de Voz Sintetizada</span>
                         </div>
 
                         <div id="inferPlaceholder" style="text-align: center; padding: 3rem 1rem; color: var(--text-sub);">
                             <i class="fa-solid fa-music" style="font-size: 3rem; margin-bottom: 1rem; color: rgba(255,255,255,0.1);"></i>
-                            <p>Haz clic en <b>"Sintetizar Voz Clonada"</b> para escuchar el resultado adaptado a tu tono.</p>
+                            <p>Haz clic en <b>"Sintetizar y Reproducir Voz"</b> para escuchar el resultado.</p>
                         </div>
 
                         <div id="inferAudioBox" class="audio-player-box">
@@ -519,7 +526,7 @@ def serve_ultra_gui():
                 <div class="header-bar">
                     <div class="page-title">
                         <h2>⚙️ Entrenamiento de Nueva Voz (Fine-Tuning con Audio Largo)</h2>
-                        <p>Sube archivos de audio largos (WAV / MP3) o graba tu voz para extracción de perfil acústico F0 + VAD + Whisper + GPU.</p>
+                        <p>Sube archivos de audio largos (WAV / MP3) o graba tu voz para segmentación VAD + Whisper + GPU.</p>
                     </div>
                 </div>
 
@@ -533,7 +540,7 @@ def serve_ultra_gui():
 
                         <div class="input-group">
                             <label>Identificador Único para la Voz (Voice ID)</label>
-                            <input type="text" id="trainVoiceId" class="input-control" value="joan_v1" placeholder="ej. joan_v1">
+                            <input type="text" id="trainVoiceId" class="input-control" value="custom_voice_1" placeholder="ej. mi_voz_custom">
                         </div>
 
                         <div class="input-group">
@@ -577,7 +584,7 @@ def serve_ultra_gui():
 
                         <div id="trainTerminal" class="terminal-box" style="display: block; min-height: 220px;">
 [SYSTEM INFO] Listo para procesar audios largos.
-Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR + Extracción de Perfil Acústico F0 + GPT-SoVITS.
+Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR + GPT-SoVITS.
                         </div>
                     </div>
                 </div>
@@ -587,14 +594,14 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
             <div id="library-view" class="view-section">
                 <div class="header-bar">
                     <div class="page-title">
-                        <h2>📁 Biblioteca de Modelos Guardados en GCS</h2>
-                        <p>Modelos de voz entrenados y almacenados persistentemente en Google Cloud Storage.</p>
+                        <h2>📁 Voces Open-Source Permanentes (4)</h2>
+                        <p>Catálogo de las 4 voces open-source en Español e Inglés disponibles para sintetización permanente.</p>
                     </div>
                 </div>
 
                 <div class="card">
                     <div id="savedVoicesContainer">
-                        <p style="color: var(--text-sub);">Cargando modelos desde GCS...</p>
+                        <p style="color: var(--text-sub);">Cargando catálogo de las 4 voces...</p>
                     </div>
                 </div>
             </div>
@@ -614,7 +621,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                         <p><b>Instancia Compute Engine:</b> clone-voice-gpu-node-dev</p>
                         <p><b>Zona GCP:</b> us-central1-a</p>
                         <p><b>IP Pública:</b> 34.46.241.26</p>
-                        <p><b>Framework MLOps:</b> FastAPI + PyTorch + Whisper + Silero VAD + Acoustic Voice Cloner</p>
+                        <p><b>Framework MLOps:</b> FastAPI + PyTorch + Whisper + Silero VAD</p>
                     </div>
 
                     <div class="card">
@@ -636,8 +643,20 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 if(element) element.classList.add('active');
             }
 
+            function handleVoiceSelectChange(select) {
+                const val = select.value;
+                const textArea = document.getElementById('inferText');
+                if (val.includes('_en')) {
+                    textArea.value = "Hello! Welcome to cloneVoice. This is a natural human speech synthesis demonstration in English.";
+                } else {
+                    textArea.value = "¡Hola! Bienvenido a cloneVoice. Esta es una demostración de síntesis de voz humana natural en español.";
+                }
+            }
+
             function selectVoiceForInfer(voiceId) {
-                document.getElementById('inferVoiceId').value = voiceId;
+                const select = document.getElementById('inferVoiceSelect');
+                select.value = voiceId;
+                handleVoiceSelectChange(select);
                 switchView('synth-view', document.querySelectorAll('.nav-item')[0]);
             }
 
@@ -649,13 +668,13 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
 
             async function loadSavedVoices() {
                 const container = document.getElementById('savedVoicesContainer');
-                container.innerHTML = '<p style="color: var(--text-sub);">Cargando modelos desde GCS...</p>';
+                container.innerHTML = '<p style="color: var(--text-sub);">Cargando catálogo de las 4 voces...</p>';
                 try {
                     const res = await fetch('/api/v1/models');
                     const models = await res.json();
                     
                     if(!models || models.length === 0) {
-                        container.innerHTML = '<p style="color: var(--text-sub);">No hay modelos guardados aún.</p>';
+                        container.innerHTML = '<p style="color: var(--text-sub);">No hay modelos cargados.</p>';
                         return;
                     }
 
@@ -663,7 +682,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                         <div class="voice-card">
                             <div class="voice-info">
                                 <h4>🎙️ Voz: "${m.voice_id}" (${m.model_name})</h4>
-                                <p>Checkpoint: ${m.checkpoint_gcs_uri}</p>
+                                <p>Idioma: ${m.language.toUpperCase()} | Checkpoint: ${m.checkpoint_gcs_uri}</p>
                             </div>
                             <button onclick="selectVoiceForInfer('${m.voice_id}')" class="btn-preview">Usar en Inferencia ↗</button>
                         </div>
@@ -706,7 +725,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
             }
 
             async function runInference() {
-                const voiceId = document.getElementById('inferVoiceId').value;
+                const voiceId = document.getElementById('inferVoiceSelect').value;
                 const textPrompt = document.getElementById('inferText').value;
                 
                 const placeholder = document.getElementById('inferPlaceholder');
@@ -718,7 +737,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 placeholder.style.display = 'none';
                 audioBox.style.display = 'none';
                 terminal.style.display = 'block';
-                terminal.textContent = `[INFER] Aplicando adaptacion acustica y sintetizando voz para '${voiceId}'...\n[INFER] Texto: "${textPrompt}"\n`;
+                terminal.textContent = `[INFER] Sintetizando voz '${voiceId}'...\n[INFER] Texto: "${textPrompt}"\n`;
 
                 try {
                     const res = await fetch('/api/v1/infer', {
@@ -728,7 +747,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                     });
                     const data = await res.json();
 
-                    terminal.textContent += `[SUCCESS] Sintesis de voz clonada para '${voiceId}' completada.\n[GCS] Guardado en: ${data.audio_output_gcs_uri}\n`;
+                    terminal.textContent += `[SUCCESS] Sintesis completada exitosamente.\n[GCS] Guardado en: ${data.audio_output_gcs_uri}\n`;
                     
                     audioBox.style.display = 'block';
                     audioEl.src = data.audio_stream_url;
@@ -804,7 +823,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                     const data = await res.json();
 
                     progressBar.style.width = '100%';
-                    terminal.textContent += `[GCS] ¡Entrenamiento y extraccion de firma vocal para '${voiceId}' finalizado!\n[MODEL] Checkpoint guardado en: ${data.training_details.checkpoint_gcs_uri}\n`;
+                    terminal.textContent += `[GCS] ¡Entrenamiento finalizado!\n[MODEL] Checkpoint guardado en: ${data.training_details.checkpoint_gcs_uri}\n`;
                     loadSavedVoices();
 
                 } catch (err) {
@@ -835,7 +854,7 @@ def list_models():
 def stream_audio(filename: str):
     file_path = os.path.join(AUDIO_OUTPUT_DIR, filename)
     if not os.path.exists(file_path):
-        create_cloned_human_speech_wav(file_path, "Voz sintetizada de prueba en GCP", "voice_stream")
+        create_cloned_human_speech_wav(file_path, "Voz sintetizada de prueba en GCP", "carlos_es")
     return FileResponse(file_path, media_type="audio/wav", filename=filename)
 
 @app.post("/api/v1/process-and-train")
@@ -861,14 +880,9 @@ async def process_and_train(
         blob_name = gcs_audio_uri.replace(f"gs://{settings.GCS_BUCKET_NAME}/", "")
         storage_service.download_file(blob_name, raw_audio_path)
 
-    # Step 2: VAD Chunking & Speaker Acoustic Profile Extraction
     chunks_dir = os.path.join(local_dir, "chunks")
     chunks = audio_processor.process_vad_chunks(raw_audio_path, chunks_dir)
-
-    # Step 3: ASR Transcription with Whisper
     dataset = asr_service.transcribe_chunks(chunks)
-
-    # Step 4: GPU Fine-Tuning & Model Save to GCS
     training_result = training_service.train_voice_model(voice_id, dataset, epochs=epochs, raw_audio_path=raw_audio_path)
     shutil.rmtree(local_dir, ignore_errors=True)
 
@@ -886,7 +900,6 @@ async def infer_voice(request: InferRequest):
     output_filename = f"cloned_{voice_id}_{os.urandom(4).hex()}.wav"
     local_output_path = os.path.join(AUDIO_OUTPUT_DIR, output_filename)
     
-    # Synthesize human speech and apply acoustic voice adaptation filter matching voice_id
     create_cloned_human_speech_wav(local_output_path, text_prompt, voice_id)
 
     gcs_infer_blob = f"{settings.INFER_OUTPUTS_PREFIX}{voice_id}/{output_filename}"

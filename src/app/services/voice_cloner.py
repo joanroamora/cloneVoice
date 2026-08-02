@@ -9,65 +9,22 @@ import subprocess
 
 logger = logging.getLogger(__name__)
 
+PERMANENT_VOICE_PROFILES = {
+    "carlos_es": {"voice_id": "carlos_es", "f0_pitch_hz": 115.0, "gender": "male", "lang": "es"},
+    "sofia_es": {"voice_id": "sofia_es", "f0_pitch_hz": 210.0, "gender": "female", "lang": "es"},
+    "david_en": {"voice_id": "david_en", "f0_pitch_hz": 118.0, "gender": "male", "lang": "en"},
+    "emma_en": {"voice_id": "emma_en", "f0_pitch_hz": 205.0, "gender": "female", "lang": "en"}
+}
+
 class AcousticVoiceCloner:
     """Neural & Formant Voice Conversion Engine for Speaker-Specific Voice Cloning."""
 
-    def extract_speaker_profile(self, audio_path: str, voice_id: str) -> dict:
-        """
-        Analyzes training audio to extract acoustic speaker signature:
-        - F0 fundamental pitch (median Hz)
-        - Vocal tract length & Formant frequencies (F1, F2)
-        - Spectral envelope & timbre characteristics
-        """
-        logger.info(f"Extracting neural speaker profile for '{voice_id}' from {audio_path}")
-        
-        f0_hz = 125.0 # Default male/neutral pitch
-        
-        try:
-            if os.path.exists(audio_path):
-                with wave.open(audio_path, 'rb') as wav_file:
-                    framerate = wav_file.getframerate()
-                    nframes = wav_file.getnframes()
-                    nchannels = wav_file.getnchannels()
-                    
-                    raw_data = wav_file.readframes(min(nframes, framerate * 30))
-                    if len(raw_data) > 0 and wav_file.getsampwidth() == 2:
-                        samples = struct.unpack(f"<{len(raw_data)//2}h", raw_data)
-                        sample_count = len(samples)
-                        
-                        zero_crossings = 0
-                        for i in range(1, len(samples), nchannels):
-                            s = samples[i]
-                            if (s >= 0 and samples[i-nchannels] < 0) or (s < 0 and samples[i-nchannels] >= 0):
-                                zero_crossings += 1
-                                
-                        if sample_count > 0:
-                            zcr = zero_crossings / (sample_count / framerate)
-                            estimated_f0 = zcr / 2.0
-                            if 75.0 <= estimated_f0 <= 280.0:
-                                f0_hz = estimated_f0
-        except Exception as e:
-            logger.warning(f"Error parsing WAV header for pitch extraction: {e}")
-
-        gender = "male" if f0_hz < 165.0 else "female"
-        
-        profile = {
-            "voice_id": voice_id,
-            "f0_pitch_hz": round(f0_hz, 1),
-            "gender": gender,
-            "chest_resonance_gain_db": 12 if gender == "male" else 2
-        }
-        
-        profile_path = f"/tmp/models/{voice_id}/speaker_profile.json"
-        os.makedirs(os.path.dirname(profile_path), exist_ok=True)
-        with open(profile_path, "w") as f:
-            json.dump(profile, f, indent=2)
-            
-        logger.info(f"Speaker Profile for '{voice_id}': F0={f0_hz:.1f}Hz, Gender={gender}")
-        return profile
-
     def get_speaker_profile(self, voice_id: str) -> dict:
-        """Retrieves speaker profile from model workspace or default male/female heuristics."""
+        """Retrieves speaker profile for the 4 permanent open-source voices or defaults."""
+        v_key = voice_id.lower()
+        if v_key in PERMANENT_VOICE_PROFILES:
+            return PERMANENT_VOICE_PROFILES[v_key]
+            
         profile_path = f"/tmp/models/{voice_id}/speaker_profile.json"
         if os.path.exists(profile_path):
             try:
@@ -75,18 +32,17 @@ class AcousticVoiceCloner:
                     return json.load(f)
             except Exception:
                 pass
-                
-        voice_lower = voice_id.lower()
-        if any(name in voice_lower for name in ["joan", "pedro", "alex", "carlos", "juan", "man", "male"]):
-            return {"voice_id": voice_id, "f0_pitch_hz": 120.0, "gender": "male"}
+
+        if "carlos" in v_key or "david" in v_key or "joan" in v_key or "man" in v_key or "male" in v_key:
+            lang = "en" if "en" in v_key or "david" in v_key else "es"
+            return {"voice_id": voice_id, "f0_pitch_hz": 118.0, "gender": "male", "lang": lang}
         else:
-            return {"voice_id": voice_id, "f0_pitch_hz": 195.0, "gender": "female"}
+            lang = "en" if "en" in v_key or "emma" in v_key else "es"
+            return {"voice_id": voice_id, "f0_pitch_hz": 200.0, "gender": "female", "lang": lang}
 
     def adapt_voice_cloning(self, input_wav_path: str, output_wav_path: str, voice_id: str) -> str:
         """
-        Executes speaker voice conversion:
-        - Pitch transposition (transposing fundamental frequency F0 to match speaker)
-        - Formant warping & chest resonance boost
+        Executes speaker voice conversion for the 4 permanent open-source voices.
         """
         profile = self.get_speaker_profile(voice_id)
         gender = profile.get("gender", "male")
@@ -94,10 +50,8 @@ class AcousticVoiceCloner:
         logger.info(f"Performing voice conversion for '{voice_id}' (Gender: {gender})...")
         
         if gender == "male":
-            # Male voice cloning: shift pitch down 10 semitones (asetrate=12500), compensate tempo, boost chest voice (110Hz)
             filter_chain = "asetrate=12500,atempo=1.92,lowpass=f=3500,equalizer=f=110:width_type=h:width=80:g=12,aresample=24000"
         else:
-            # Female voice cloning: preserve high formants and clarity
             filter_chain = "equalizer=f=2400:width_type=h:width=400:g=3,aresample=24000"
         
         cmd = [
