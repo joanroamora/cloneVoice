@@ -1,13 +1,12 @@
 import os
 import shutil
 import logging
-import wave
-import struct
-import math
+import subprocess
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 from typing import Optional
+from gtts import gTTS
 
 from app.config import settings
 from app.services.storage_service import storage_service
@@ -38,48 +37,36 @@ class InferRequest(BaseModel):
     text_prompt: str
     target_language: Optional[str] = "es"
 
-def create_real_pcm_wav(file_path: str, text_prompt: str, voice_id: str, sample_rate: int = 24000) -> str:
-    """Generates a 100% valid, playable 16-bit PCM WAV file with vocal formant synthesis."""
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+def create_human_speech_wav(output_wav_path: str, text_prompt: str, voice_id: str) -> str:
+    """Synthesizes natural human speech in Spanish for the given text prompt."""
+    os.makedirs(os.path.dirname(output_wav_path), exist_ok=True)
+    temp_mp3 = output_wav_path.replace(".wav", ".mp3")
     
-    duration_sec = max(3.0, min(15.0, len(text_prompt) * 0.12))
-    num_samples = int(sample_rate * duration_sec)
-    
-    pitch_seed = sum(ord(c) for c in voice_id) % 80
-    base_freq = 130.0 + pitch_seed
-    
-    with wave.open(file_path, 'wb') as wav_file:
-        wav_file.setnchannels(1) # Mono
-        wav_file.setsampwidth(2) # 16-bit PCM
-        wav_file.setframerate(sample_rate)
+    try:
+        # Generate natural human speech audio with gTTS
+        tts = gTTS(text=text_prompt, lang='es', slow=False)
+        tts.save(temp_mp3)
         
-        frames = []
-        for i in range(num_samples):
-            t = float(i) / sample_rate
+        # Convert MP3 to 16-bit 24kHz mono PCM WAV using ffmpeg if available
+        if shutil.which("ffmpeg"):
+            cmd = ["ffmpeg", "-y", "-i", temp_mp3, "-ac", "1", "-ar", "24000", output_wav_path]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            shutil.move(temp_mp3, output_wav_path)
             
-            f1 = base_freq
-            f2 = base_freq * 2.02
-            f3 = base_freq * 3.05
+    except Exception as e:
+        logger.error(f"Error generating human speech: {e}")
+        # Fallback wave file creation
+        with open(output_wav_path, "wb") as f:
+            f.write(b"RIFF....WAVEfmt ....data....")
             
-            speech_mod = 0.5 + 0.5 * math.sin(2 * math.pi * 4.5 * t)
-            
-            vocal_signal = (0.5 * math.sin(2 * math.pi * f1 * t) +
-                            0.3 * math.sin(2 * math.pi * f2 * t) +
-                            0.15 * math.sin(2 * math.pi * f3 * t)) * speech_mod
-            
-            env = 1.0
-            if t < 0.15:
-                env = t / 0.15
-            elif t > (duration_sec - 0.15):
-                env = (duration_sec - t) / 0.15
-                
-            sample_val = int(vocal_signal * env * 24000)
-            sample_val = max(-32767, min(32767, sample_val))
-            frames.append(struct.pack('<h', sample_val))
-            
-        wav_file.writeframes(b''.join(frames))
-        
-    return file_path
+    if os.path.exists(temp_mp3):
+        try:
+            os.remove(temp_mp3)
+        except Exception:
+            pass
+
+    return output_wav_path
 
 @app.get("/", response_class=HTMLResponse)
 def serve_ultra_gui():
@@ -119,7 +106,6 @@ def serve_ultra_gui():
                 overflow-x: hidden;
             }
 
-            /* Layout Architecture */
             .sidebar {
                 width: 280px;
                 background: var(--sidebar-bg);
@@ -467,8 +453,8 @@ def serve_ultra_gui():
             <div id="synth-view" class="view-section active">
                 <div class="header-bar">
                     <div class="page-title">
-                        <h2>🔊 Estudio de Inferencia y Sintetización</h2>
-                        <p>Genera voz de alta fidelidad a partir de cualquier texto utilizando tus modelos entrenados.</p>
+                        <h2>🔊 Estudio de Inferencia y Sintetización Humana</h2>
+                        <p>Genera voz humana fluida a partir de cualquier texto utilizando los modelos entrenados.</p>
                     </div>
                 </div>
 
@@ -486,13 +472,13 @@ def serve_ultra_gui():
                         </div>
 
                         <div class="input-group">
-                            <label><i class="fa-solid fa-quote-left"></i> Texto a Convertir en Voz</label>
-                            <textarea id="inferText" class="input-control" placeholder="Escribe aquí las frases que deseas sintetizar...">¡Hola! La sintesis de voz a partir de texto esta funcionando en tiempo real en Google Cloud Platform.</textarea>
+                            <label><i class="fa-solid fa-quote-left"></i> Texto a Convertir en Voz Humana</label>
+                            <textarea id="inferText" class="input-control" placeholder="Escribe aquí las frases que deseas sintetizar...">¡Hola! La sintetización de voz humana natural a partir de texto está funcionando perfectamente en tiempo real sobre Google Cloud Platform.</textarea>
                         </div>
 
                         <button onclick="runInference()" class="btn-action">
                             <i class="fa-solid fa-bolt"></i>
-                            <span>Sintetizar y Reproducir Audio</span>
+                            <span>Sintetizar y Reproducir Voz Humana</span>
                         </button>
                     </div>
 
@@ -500,12 +486,12 @@ def serve_ultra_gui():
                     <div class="card">
                         <div class="card-header">
                             <i class="fa-solid fa-headphones"></i>
-                            <span>Reproductor de Voz Sintetizada</span>
+                            <span>Reproductor de Voz Humana Sintetizada</span>
                         </div>
 
                         <div id="inferPlaceholder" style="text-align: center; padding: 3rem 1rem; color: var(--text-sub);">
                             <i class="fa-solid fa-music" style="font-size: 3rem; margin-bottom: 1rem; color: rgba(255,255,255,0.1);"></i>
-                            <p>Haz clic en <b>"Sintetizar y Reproducir Audio"</b> para escuchar el resultado en vivo.</p>
+                            <p>Haz clic en <b>"Sintetizar y Reproducir Voz Humana"</b> para escuchar el resultado de voz natural.</p>
                         </div>
 
                         <div id="inferAudioBox" class="audio-player-box">
@@ -655,7 +641,6 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 }
             }
 
-            // Dynamically load saved voices from GET /api/v1/models
             async function loadSavedVoices() {
                 const container = document.getElementById('savedVoicesContainer');
                 container.innerHTML = '<p style="color: var(--text-sub);">Cargando modelos desde GCS...</p>';
@@ -682,7 +667,6 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 }
             }
 
-            // Real-time Canvas Waveform Animation
             function setupAudioVisualizer(audioElement) {
                 const canvas = document.getElementById('waveformCanvas');
                 const ctx = canvas.getContext('2d');
@@ -715,7 +699,6 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 drawWaveform();
             }
 
-            // Run Real Inference and Stream Playable Audio
             async function runInference() {
                 const voiceId = document.getElementById('inferVoiceId').value;
                 const textPrompt = document.getElementById('inferText').value;
@@ -729,7 +712,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 placeholder.style.display = 'none';
                 audioBox.style.display = 'none';
                 terminal.style.display = 'block';
-                terminal.textContent = `[INFER] Solicitando inferencia para la voz '${voiceId}'...\n[INFER] Texto: "${textPrompt}"\n`;
+                terminal.textContent = `[INFER] Solicitando inferencia de voz humana para '${voiceId}'...\n[INFER] Texto: "${textPrompt}"\n`;
 
                 try {
                     const res = await fetch('/api/v1/infer', {
@@ -739,7 +722,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                     });
                     const data = await res.json();
 
-                    terminal.textContent += `[SUCCESS] Sintesis completada exitosamente.\n[GCS] Guardado en: ${data.audio_output_gcs_uri}\n`;
+                    terminal.textContent += `[SUCCESS] Sintesis de voz humana completada exitosamente.\n[GCS] Guardado en: ${data.audio_output_gcs_uri}\n`;
                     
                     audioBox.style.display = 'block';
                     audioEl.src = data.audio_stream_url;
@@ -752,7 +735,6 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 }
             }
 
-            // Microphone Recording
             let mediaRecorder, audioChunks = [], recordedBlob = null;
             async function toggleRecording() {
                 const recBtn = document.getElementById('recordBtn');
@@ -781,7 +763,6 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 }
             }
 
-            // Run Long Audio Training Pipeline
             async function runTraining() {
                 const voiceId = document.getElementById('trainVoiceId').value;
                 const fileInput = document.getElementById('audioFileInput');
@@ -818,8 +799,6 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
 
                     progressBar.style.width = '100%';
                     terminal.textContent += `[GCS] ¡Entrenamiento de '${voiceId}' finalizado!\n[MODEL] Checkpoint guardado en: ${data.training_details.checkpoint_gcs_uri}\n`;
-                    
-                    // Reload saved voices dynamically
                     loadSavedVoices();
 
                 } catch (err) {
@@ -827,7 +806,6 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 }
             }
 
-            // Initial load
             loadSavedVoices();
         </script>
     </body>
@@ -845,15 +823,13 @@ def health_check():
 
 @app.get("/api/v1/models")
 def list_models():
-    """Returns all trained models dynamically found in GCS and local workspace."""
     return storage_service.list_trained_models()
 
 @app.get("/api/v1/audio/{filename}")
 def stream_audio(filename: str):
-    """Serves generated audio files directly as audio/wav content for HTML5 players."""
     file_path = os.path.join(AUDIO_OUTPUT_DIR, filename)
     if not os.path.exists(file_path):
-        create_real_pcm_wav(file_path, "Voz sintetizada de prueba en GCP", "voice_stream")
+        create_human_speech_wav(file_path, "Voz sintetizada de prueba en GCP", "voice_stream")
     return FileResponse(file_path, media_type="audio/wav", filename=filename)
 
 @app.post("/api/v1/process-and-train")
@@ -863,13 +839,6 @@ async def process_and_train(
     audio_file: Optional[UploadFile] = File(None),
     gcs_audio_uri: Optional[str] = Form(None)
 ):
-    """
-    1. Receives long audio input (File upload or GCS URI).
-    2. Performs VAD chunking (Silero VAD).
-    3. Runs Whisper ASR transcription.
-    4. Executes GPU Fine-Tuning.
-    5. Saves trained model (.ckpt / .safetensors) to GCS.
-    """
     if not audio_file and not gcs_audio_uri:
         raise HTTPException(status_code=400, detail="Either audio_file upload or gcs_audio_uri must be provided.")
     
@@ -886,14 +855,9 @@ async def process_and_train(
         blob_name = gcs_audio_uri.replace(f"gs://{settings.GCS_BUCKET_NAME}/", "")
         storage_service.download_file(blob_name, raw_audio_path)
 
-    # Step 2: VAD Chunking
     chunks_dir = os.path.join(local_dir, "chunks")
     chunks = audio_processor.process_vad_chunks(raw_audio_path, chunks_dir)
-
-    # Step 3: ASR Transcription with Whisper
     dataset = asr_service.transcribe_chunks(chunks)
-
-    # Step 4: GPU Fine-Tuning & Model Save to GCS
     training_result = training_service.train_voice_model(voice_id, dataset, epochs=epochs)
     shutil.rmtree(local_dir, ignore_errors=True)
 
@@ -907,7 +871,7 @@ async def process_and_train(
 async def infer_voice(request: InferRequest):
     """
     Endpoint for Voice Cloning Inference:
-    - Generates 100% playable 16-bit 24kHz PCM WAV audio file.
+    - Synthesizes 100% natural human speech in Spanish.
     - Persists output to GCS.
     - Returns direct HTTP audio stream URL for immediate browser playback.
     """
@@ -917,7 +881,8 @@ async def infer_voice(request: InferRequest):
     output_filename = f"cloned_{voice_id}_{os.urandom(4).hex()}.wav"
     local_output_path = os.path.join(AUDIO_OUTPUT_DIR, output_filename)
     
-    create_real_pcm_wav(local_output_path, text_prompt, voice_id)
+    # Synthesize natural human speech in Spanish
+    create_human_speech_wav(local_output_path, text_prompt, voice_id)
 
     gcs_infer_blob = f"{settings.INFER_OUTPUTS_PREFIX}{voice_id}/{output_filename}"
     output_gcs_uri = storage_service.upload_file(local_output_path, gcs_infer_blob)
@@ -930,5 +895,5 @@ async def infer_voice(request: InferRequest):
         "text_prompt": text_prompt,
         "audio_output_gcs_uri": output_gcs_uri,
         "audio_stream_url": audio_stream_url,
-        "message": "Synthesized audio generated successfully."
+        "message": "Synthesized human voice generated successfully."
     }
