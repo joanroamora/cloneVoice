@@ -35,22 +35,25 @@ resource "google_compute_instance_template" "gpu_vm_template" {
 
   scheduling {
     automatic_restart   = var.preemptible_vm ? false : true
-    on_host_maintenance = "TERMINATE" # Required for GPUs
+    on_host_maintenance = var.gpu_count > 0 ? "TERMINATE" : "MIGRATE"
     preemptible         = var.preemptible_vm
     provisioning_model  = var.preemptible_vm ? "SPOT" : "STANDARD"
   }
 
   disk {
-    source_image = "deeplearning-platform-release/tf2-11-cu113-notebooks" # GCP Deep Learning VM image preconfigured with CUDA/Drivers
+    source_image = "ubuntu-os-cloud/ubuntu-2204-lts"
     auto_delete  = true
     boot         = true
     disk_size_gb = 100
     disk_type    = "pd-ssd"
   }
 
-  guest_accelerator {
-    type  = var.gpu_type
-    count = var.gpu_count
+  dynamic "guest_accelerator" {
+    for_each = var.gpu_count > 0 ? [1] : []
+    content {
+      type  = var.gpu_type
+      count = var.gpu_count
+    }
   }
 
   network_interface {

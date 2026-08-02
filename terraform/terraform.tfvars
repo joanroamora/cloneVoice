@@ -1,0 +1,9 @@
+gcp_project_id  = "bitcitychamp-project"
+gcp_region      = "us-central1"
+gcp_zone        = "us-central1-a"
+environment     = "dev"
+machine_type    = "e2-standard-4"
+gpu_type        = "nvidia-l4"
+gpu_count       = 0
+preemptible_vm  = false
+container_image = "us-central1-docker.pkg.dev/bitcitychamp-project/clone-voice-repo/clone-voice-mlops:latest"
