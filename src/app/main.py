@@ -39,17 +39,18 @@ class InferRequest(BaseModel):
     target_language: Optional[str] = "es"
 
 def create_cloned_human_speech_wav(output_wav_path: str, text_prompt: str, voice_id: str) -> str:
-    """Synthesizes human speech in Spanish/English and applies acoustic voice cloning adaptation for voice_id."""
+    """Synthesizes high quality human speech with distinct regional accents (MX, ES, US, UK)."""
     os.makedirs(os.path.dirname(output_wav_path), exist_ok=True)
     temp_base_mp3 = output_wav_path.replace(".wav", "_base.mp3")
     temp_base_wav = output_wav_path.replace(".wav", "_base.wav")
     
-    # Determine language from voice_id
-    lang = "en" if "en" in voice_id.lower() or "david" in voice_id.lower() or "emma" in voice_id.lower() else "es"
+    profile = voice_cloner.get_speaker_profile(voice_id)
+    lang = profile.get("lang", "es")
+    tld = profile.get("tld", "es")
     
     try:
-        # 1. Synthesize text in Spanish/English using gTTS
-        tts = gTTS(text=text_prompt, lang=lang, slow=False)
+        # Generate base human speech with specific regional accent domain (tld)
+        tts = gTTS(text=text_prompt, lang=lang, tld=tld, slow=False)
         tts.save(temp_base_mp3)
         
         # Convert MP3 to base WAV
@@ -59,7 +60,7 @@ def create_cloned_human_speech_wav(output_wav_path: str, text_prompt: str, voice
         else:
             shutil.move(temp_base_mp3, temp_base_wav)
             
-        # 2. Apply acoustic voice cloning transformation matching the target speaker profile
+        # Apply smooth acoustic voice transformation
         voice_cloner.adapt_voice_cloning(temp_base_wav, output_wav_path, voice_id)
         
     except Exception as e:
@@ -462,7 +463,7 @@ def serve_ultra_gui():
                 <div class="header-bar">
                     <div class="page-title">
                         <h2>🔊 Estudio de Inferencia y Sintetización</h2>
-                        <p>Sintetiza voz utilizando las 4 voces preentrenadas Open-Source en Español e Inglés.</p>
+                        <p>Sintetiza voz utilizando las 4 voces profesionales Open-Source en Español e Inglés.</p>
                     </div>
                 </div>
 
@@ -477,16 +478,16 @@ def serve_ultra_gui():
                         <div class="input-group">
                             <label><i class="fa-solid fa-user-tag"></i> Seleccionar Modelo de Voz Open-Source</label>
                             <select id="inferVoiceSelect" class="input-control" onchange="handleVoiceSelectChange(this)">
-                                <option value="carlos_es" selected>🇪🇸 Carlos (Español Masculino)</option>
-                                <option value="sofia_es">🇪🇸 Sofía (Español Femenino)</option>
+                                <option value="carlos_es" selected>🇪🇸 Carlos (Español Masculino Natural)</option>
+                                <option value="sofia_es">🇲🇽 Sofía (Español Latino Femenino)</option>
                                 <option value="david_en">🇺🇸 David (English US Male)</option>
-                                <option value="emma_en">🇺🇸 Emma (English US Female)</option>
+                                <option value="emma_en">🇬🇧 Emma (English UK British Female)</option>
                             </select>
                         </div>
 
                         <div class="input-group">
                             <label><i class="fa-solid fa-quote-left"></i> Texto a Convertir en Voz</label>
-                            <textarea id="inferText" class="input-control" placeholder="Escribe aquí el texto que deseas sintetizar...">¡Hola! Bienvenido a cloneVoice. Puedes probar las cuatro voces preentrenadas en español e inglés.</textarea>
+                            <textarea id="inferText" class="input-control" placeholder="Escribe aquí el texto que deseas sintetizar...">¡Hola! Bienvenido a cloneVoice. Puedes probar las cuatro voces preentrenadas de alta calidad en español e inglés.</textarea>
                         </div>
 
                         <button onclick="runInference()" class="btn-action">
@@ -504,7 +505,7 @@ def serve_ultra_gui():
 
                         <div id="inferPlaceholder" style="text-align: center; padding: 3rem 1rem; color: var(--text-sub);">
                             <i class="fa-solid fa-music" style="font-size: 3rem; margin-bottom: 1rem; color: rgba(255,255,255,0.1);"></i>
-                            <p>Haz clic en <b>"Sintetizar y Reproducir Voz"</b> para escuchar el resultado.</p>
+                            <p>Haz clic en <b>"Sintetizar y Reproducir Voz"</b> para escuchar el resultado de alta calidad.</p>
                         </div>
 
                         <div id="inferAudioBox" class="audio-player-box">
@@ -595,7 +596,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 <div class="header-bar">
                     <div class="page-title">
                         <h2>📁 Voces Open-Source Permanentes (4)</h2>
-                        <p>Catálogo de las 4 voces open-source en Español e Inglés disponibles para sintetización permanente.</p>
+                        <p>Catálogo de las 4 voces profesionales con acentos regionales en Español e Inglés.</p>
                     </div>
                 </div>
 
@@ -646,10 +647,14 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
             function handleVoiceSelectChange(select) {
                 const val = select.value;
                 const textArea = document.getElementById('inferText');
-                if (val.includes('_en')) {
-                    textArea.value = "Hello! Welcome to cloneVoice. This is a natural human speech synthesis demonstration in English.";
+                if (val === 'david_en') {
+                    textArea.value = "Hello! Welcome to cloneVoice. This is David, an American male speaker voice.";
+                } else if (val === 'emma_en') {
+                    textArea.value = "Hello! Welcome to cloneVoice. This is Emma, a British female speaker voice.";
+                } else if (val === 'sofia_es') {
+                    textArea.value = "¡Hola! Bienvenido a cloneVoice. Soy Sofía, voz femenina en español latino.";
                 } else {
-                    textArea.value = "¡Hola! Bienvenido a cloneVoice. Esta es una demostración de síntesis de voz humana natural en español.";
+                    textArea.value = "¡Hola! Bienvenido a cloneVoice. Soy Carlos, voz masculina en español natural.";
                 }
             }
 
@@ -737,7 +742,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 placeholder.style.display = 'none';
                 audioBox.style.display = 'none';
                 terminal.style.display = 'block';
-                terminal.textContent = `[INFER] Sintetizando voz '${voiceId}'...\n[INFER] Texto: "${textPrompt}"\n`;
+                terminal.textContent = `[INFER] Sintetizando voz alta calidad '${voiceId}'...\n[INFER] Texto: "${textPrompt}"\n`;
 
                 try {
                     const res = await fetch('/api/v1/infer', {
