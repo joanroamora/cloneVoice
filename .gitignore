@@ -1,0 +1,6 @@
+# Environment and secret files
+.env
+*.json
+credentials/
+!package.json
+!tsconfig.json
