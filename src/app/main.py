@@ -42,11 +42,9 @@ def create_real_pcm_wav(file_path: str, text_prompt: str, voice_id: str, sample_
     """Generates a 100% valid, playable 16-bit PCM WAV file with vocal formant synthesis."""
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     
-    # Calculate duration based on text prompt length (3s - 15s)
     duration_sec = max(3.0, min(15.0, len(text_prompt) * 0.12))
     num_samples = int(sample_rate * duration_sec)
     
-    # Fundamental vocal pitch based on voice_id
     pitch_seed = sum(ord(c) for c in voice_id) % 80
     base_freq = 130.0 + pitch_seed
     
@@ -59,19 +57,16 @@ def create_real_pcm_wav(file_path: str, text_prompt: str, voice_id: str, sample_
         for i in range(num_samples):
             t = float(i) / sample_rate
             
-            # Vocal formants (harmonics)
             f1 = base_freq
             f2 = base_freq * 2.02
             f3 = base_freq * 3.05
             
-            # Syllable speech envelope modulation
             speech_mod = 0.5 + 0.5 * math.sin(2 * math.pi * 4.5 * t)
             
             vocal_signal = (0.5 * math.sin(2 * math.pi * f1 * t) +
                             0.3 * math.sin(2 * math.pi * f2 * t) +
                             0.15 * math.sin(2 * math.pi * f3 * t)) * speech_mod
             
-            # Fade-in and fade-out envelope
             env = 1.0
             if t < 0.15:
                 env = t / 0.15
@@ -214,7 +209,6 @@ def serve_ultra_gui():
                 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
             }
 
-            /* Main Content Area */
             .main-content {
                 margin-left: 280px;
                 flex: 1;
@@ -237,7 +231,6 @@ def serve_ultra_gui():
 
             .page-title p { color: var(--text-sub); }
 
-            /* Grid Layout for Cards */
             .grid-2 {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
@@ -269,7 +262,6 @@ def serve_ultra_gui():
 
             .card-header i { color: var(--primary); }
 
-            /* Form Elements */
             .input-group {
                 margin-bottom: 1.4rem;
             }
@@ -304,7 +296,6 @@ def serve_ultra_gui():
                 min-height: 120px;
             }
 
-            /* Upload Dropzone & Mic Recorder */
             .dropzone {
                 border: 2px dashed var(--card-border);
                 border-radius: 16px;
@@ -347,7 +338,6 @@ def serve_ultra_gui():
                 animation: pulse-red 1.5s infinite;
             }
 
-            /* Action Buttons */
             .btn-action {
                 width: 100%;
                 background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
@@ -371,7 +361,6 @@ def serve_ultra_gui():
                 box-shadow: 0 15px 30px -5px rgba(168, 85, 247, 0.5);
             }
 
-            /* Audio Visualizer & Player Box */
             .audio-player-box {
                 margin-top: 1.5rem;
                 background: rgba(7, 9, 19, 0.9);
@@ -391,7 +380,6 @@ def serve_ultra_gui():
 
             audio { width: 100%; height: 44px; }
 
-            /* Terminal Log Output */
             .terminal-box {
                 background: #04060c;
                 border: 1px solid rgba(255, 255, 255, 0.1);
@@ -406,11 +394,9 @@ def serve_ultra_gui():
                 display: none;
             }
 
-            /* Views Section Management */
             .view-section { display: none; }
             .view-section.active { display: block; }
 
-            /* Voice Library Cards */
             .voice-card {
                 background: rgba(13, 17, 36, 0.9);
                 border: 1px solid var(--card-border);
@@ -454,7 +440,7 @@ def serve_ultra_gui():
                     <i class="fa-solid fa-microchip"></i>
                     <span>Entrenar Modelo</span>
                 </li>
-                <li class="nav-item" onclick="switchView('library-view', this)">
+                <li class="nav-item" onclick="switchView('library-view', this); loadSavedVoices();">
                     <i class="fa-solid fa-folder-closed"></i>
                     <span>Voces Guardadas</span>
                 </li>
@@ -615,20 +601,8 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 </div>
 
                 <div class="card">
-                    <div class="voice-card">
-                        <div class="voice-info">
-                            <h4>🎙️ Voz: "joan" (GPT-SoVITS Model)</h4>
-                            <p>Checkpoint: gs://clone-voice-storage-bitcitychamp-project-8cc83f2c/trained-models/joan/joan_gpt_sovits.ckpt</p>
-                        </div>
-                        <button onclick="selectVoiceForInfer('joan')" class="btn-preview">Usar en Inferencia ↗</button>
-                    </div>
-
-                    <div class="voice-card">
-                        <div class="voice-info">
-                            <h4>🎙️ Voz: "test_voice" (GPT-SoVITS Model)</h4>
-                            <p>Checkpoint: gs://clone-voice-storage-bitcitychamp-project-8cc83f2c/trained-models/test_voice/test_voice_gpt_sovits.ckpt</p>
-                        </div>
-                        <button onclick="selectVoiceForInfer('test_voice')" class="btn-preview">Usar en Inferencia ↗</button>
+                    <div id="savedVoicesContainer">
+                        <p style="color: var(--text-sub);">Cargando modelos desde GCS...</p>
                     </div>
                 </div>
             </div>
@@ -667,7 +641,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
                 document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
                 document.getElementById(viewId).classList.add('active');
-                element.classList.add('active');
+                if(element) element.classList.add('active');
             }
 
             function selectVoiceForInfer(voiceId) {
@@ -678,6 +652,33 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
             function handleFileSelect(input) {
                 if (input.files && input.files[0]) {
                     document.getElementById('fileNameDisplay').textContent = "Seleccionado: " + input.files[0].name;
+                }
+            }
+
+            // Dynamically load saved voices from GET /api/v1/models
+            async function loadSavedVoices() {
+                const container = document.getElementById('savedVoicesContainer');
+                container.innerHTML = '<p style="color: var(--text-sub);">Cargando modelos desde GCS...</p>';
+                try {
+                    const res = await fetch('/api/v1/models');
+                    const models = await res.json();
+                    
+                    if(!models || models.length === 0) {
+                        container.innerHTML = '<p style="color: var(--text-sub);">No hay modelos guardados aún.</p>';
+                        return;
+                    }
+
+                    container.innerHTML = models.map(m => `
+                        <div class="voice-card">
+                            <div class="voice-info">
+                                <h4>🎙️ Voz: "${m.voice_id}" (${m.model_name})</h4>
+                                <p>Checkpoint: ${m.checkpoint_gcs_uri}</p>
+                            </div>
+                            <button onclick="selectVoiceForInfer('${m.voice_id}')" class="btn-preview">Usar en Inferencia ↗</button>
+                        </div>
+                    `).join('');
+                } catch(e) {
+                    container.innerHTML = '<p style="color: #ef4444;">Error cargando modelos de voz desde GCS.</p>';
                 }
             }
 
@@ -740,7 +741,6 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
 
                     terminal.textContent += `[SUCCESS] Sintesis completada exitosamente.\n[GCS] Guardado en: ${data.audio_output_gcs_uri}\n`;
                     
-                    // Display audio player, load real stream URL and play
                     audioBox.style.display = 'block';
                     audioEl.src = data.audio_stream_url;
                     downloadBtn.href = data.audio_stream_url;
@@ -808,16 +808,6 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
 
                 progressBar.style.width = '30%';
                 terminal.textContent += `[VAD] Ejecutando Silero VAD para segmentacion de pausas y silencios...\n`;
-                
-                setTimeout(() => {
-                    progressBar.style.width = '60%';
-                    terminal.textContent += `[ASR] Transcribiendo fragmentos con OpenAI Whisper...\n`;
-                }, 1200);
-
-                setTimeout(() => {
-                    progressBar.style.width = '85%';
-                    terminal.textContent += `[TRAIN] Ejecutando Fine-Tuning de GPT-SoVITS en GPU...\n`;
-                }, 2400);
 
                 try {
                     const res = await fetch('/api/v1/process-and-train', {
@@ -828,10 +818,17 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
 
                     progressBar.style.width = '100%';
                     terminal.textContent += `[GCS] ¡Entrenamiento de '${voiceId}' finalizado!\n[MODEL] Checkpoint guardado en: ${data.training_details.checkpoint_gcs_uri}\n`;
+                    
+                    // Reload saved voices dynamically
+                    loadSavedVoices();
+
                 } catch (err) {
                     terminal.textContent += `[ERROR] Error en el entrenamiento: ${err}`;
                 }
             }
+
+            // Initial load
+            loadSavedVoices();
         </script>
     </body>
     </html>
@@ -846,12 +843,16 @@ def health_check():
         "gcs_bucket": settings.GCS_BUCKET_NAME
     }
 
+@app.get("/api/v1/models")
+def list_models():
+    """Returns all trained models dynamically found in GCS and local workspace."""
+    return storage_service.list_trained_models()
+
 @app.get("/api/v1/audio/{filename}")
 def stream_audio(filename: str):
     """Serves generated audio files directly as audio/wav content for HTML5 players."""
     file_path = os.path.join(AUDIO_OUTPUT_DIR, filename)
     if not os.path.exists(file_path):
-        # Generate on-demand PCM WAV if not on disk
         create_real_pcm_wav(file_path, "Voz sintetizada de prueba en GCP", "voice_stream")
     return FileResponse(file_path, media_type="audio/wav", filename=filename)
 
@@ -916,10 +917,8 @@ async def infer_voice(request: InferRequest):
     output_filename = f"cloned_{voice_id}_{os.urandom(4).hex()}.wav"
     local_output_path = os.path.join(AUDIO_OUTPUT_DIR, output_filename)
     
-    # Generate real 100% playable PCM WAV audio file
     create_real_pcm_wav(local_output_path, text_prompt, voice_id)
 
-    # Upload audio to GCS
     gcs_infer_blob = f"{settings.INFER_OUTPUTS_PREFIX}{voice_id}/{output_filename}"
     output_gcs_uri = storage_service.upload_file(local_output_path, gcs_infer_blob)
     

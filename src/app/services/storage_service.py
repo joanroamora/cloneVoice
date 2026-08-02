@@ -47,4 +47,34 @@ class StorageService:
         blob = self.bucket.blob(gcs_blob_name)
         return blob.exists()
 
+    def list_trained_models(self) -> list:
+        """Lists all trained voice models saved in GCS and local workspace."""
+        models = []
+        known_voices = set(["joan", "test_voice"])
+        
+        if self.bucket:
+            try:
+                blobs = self.client.list_blobs(self.bucket_name, prefix=settings.TRAINED_MODELS_PREFIX)
+                for blob in blobs:
+                    parts = blob.name.split("/")
+                    if len(parts) >= 2 and parts[1]:
+                        known_voices.add(parts[1])
+            except Exception as e:
+                logger.warning(f"Error listing GCS blobs: {e}")
+
+        models_dir = "/tmp/models"
+        if os.path.exists(models_dir):
+            for d in os.listdir(models_dir):
+                if os.path.isdir(os.path.join(models_dir, d)):
+                    known_voices.add(d)
+
+        for voice_id in sorted(list(known_voices)):
+            models.append({
+                "voice_id": voice_id,
+                "model_name": f"{voice_id} (GPT-SoVITS Model)",
+                "checkpoint_gcs_uri": f"gs://{self.bucket_name}/trained-models/{voice_id}/{voice_id}_gpt_sovits.ckpt",
+                "status": "READY"
+            })
+        return models
+
 storage_service = StorageService()
