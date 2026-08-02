@@ -3,16 +3,21 @@ resource "random_id" "bucket_suffix" {
 }
 
 resource "google_storage_bucket" "mlops_storage" {
-  name                     = "clone-voice-storage-${var.project_id}-${random_id.bucket_suffix.hex}"
-  location                 = var.region
-  project                  = var.project_id
-  force_destroy            = true
+  name                        = "clone-voice-storage-${var.project_id}-${random_id.bucket_suffix.hex}"
+  location                    = var.region
+  project                     = var.project_id
+  force_destroy               = true # Deletes ALL objects inside bucket on terraform destroy
   uniform_bucket_level_access = true
 
   storage_class = "STANDARD"
 
+  # Disable soft-delete retention to prevent lingering storage costs after destroy
+  soft_delete_policy {
+    retention_duration_seconds = 0
+  }
+
   versioning {
-    enabled = true
+    enabled = false # Disabled to ensure instant total purge on destroy without lingering historical versions
   }
 
   lifecycle_rule {
@@ -20,8 +25,8 @@ resource "google_storage_bucket" "mlops_storage" {
       type = "Delete"
     }
     condition {
-      age = 30 # Delete temporary processed chunks older than 30 days
-      with_state = "ANY"
+      age            = 30 # Delete temporary processed chunks older than 30 days
+      with_state     = "ANY"
       matches_prefix = ["processed-chunks/"]
     }
   }
