@@ -19,7 +19,7 @@ if ! command -v docker &> /dev/null; then
     apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+    echo "deb [arch=$$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $$(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
     apt-get update
     apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 fi
@@ -29,7 +29,7 @@ if command -v lspci &> /dev/null && lspci | grep -i nvidia; then
     echo "NVIDIA GPU Detected. Setting up CUDA & Container Toolkit..."
     if ! command -v nvidia-smi &> /dev/null; then
         apt-get update
-        apt-get install -y linux-headers-$(uname -r)
+        apt-get install -y linux-headers-$$(uname -r)
         apt-get install -y nvidia-driver-535 nvidia-dkms-535 || true
     fi
 
@@ -53,22 +53,22 @@ CONTAINER_NAME="clonevoice-mlops-api"
 IMAGE_URI="${CONTAINER_IMAGE}"
 GCS_BUCKET="${GCS_BUCKET_NAME}"
 
-echo "Pulling container image: ${IMAGE_URI}"
-docker pull "${IMAGE_URI}" || echo "Warning: Could not pull container image immediately, will retry if exists local fallback."
+echo "Pulling container image: $${IMAGE_URI}"
+docker pull "$${IMAGE_URI}" || echo "Warning: Could not pull container image immediately, will retry if exists local fallback."
 
-docker stop "${CONTAINER_NAME}" || true
-docker rm "${CONTAINER_NAME}" || true
+docker stop "$${CONTAINER_NAME}" || true
+docker rm "$${CONTAINER_NAME}" || true
 
 echo "Starting cloneVoice container..."
 docker run -d \
-    --name "${CONTAINER_NAME}" \
+    --name "$${CONTAINER_NAME}" \
     --restart always \
     --gpus all \
     -p 8000:8000 \
-    -e GCS_BUCKET_NAME="${GCS_BUCKET}" \
+    -e GCS_BUCKET_NAME="$${GCS_BUCKET}" \
     -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
     -e PORT=8000 \
-    "${IMAGE_URI}"
+    "$${IMAGE_URI}"
 
 echo "========================================="
 echo "cloneVoice GPU VM Provisioning Completed Successfully!"
