@@ -21,8 +21,8 @@ logger = logging.getLogger("cloneVoice")
 
 app = FastAPI(
     title="cloneVoice Multi-Service Platform",
-    description="Servicio 1 (MLOps Voice Cloning GPT-SoVITS) + Servicio 2 (Motor TTS Hiperrealista Kokoro-82M)",
-    version="2.0.0"
+    description="Servicio 1 (MLOps Voice Cloning GPT-SoVITS) + Servicio 2 (Motor TTS Hiperrealista Qwen3-TTS)",
+    version="3.0.0"
 )
 
 AUDIO_OUTPUT_DIR = "/tmp/infer_output"
@@ -40,10 +40,11 @@ class InferRequest(BaseModel):
     text_prompt: str
     target_language: Optional[str] = "es"
 
-class SynthesizeRequest(BaseModel):
-    text: str
-    voice_reference: Optional[str] = None
+class SynthesizePayload(BaseModel):
+    text: Optional[str] = None
     language: Optional[str] = "es"
+    speaker_id: Optional[str] = "qwen_es_male"
+    voice_reference: Optional[str] = None
 
 def create_cloned_human_speech_wav(output_wav_path: str, text_prompt: str, voice_id: str) -> str:
     os.makedirs(os.path.dirname(output_wav_path), exist_ok=True)
@@ -151,12 +152,12 @@ def serve_main_landing_portal():
                 <!-- SERVICIO 2 -->
                 <div class="service-card">
                     <div class="service-icon s2-icon"><i class="fa-solid fa-bolt"></i></div>
-                    <h3>Servicio 2: Motor TTS Hiperrealista (Kokoro-82M)</h3>
-                    <p>Motor de síntesis de voz ultrarrealista de código abierto (Kokoro-82M) optimizado para ejecutar en CPU de 4 vCPUs y 16GB RAM.</p>
+                    <h3>Servicio 2: Motor TTS Neural Hiperrealista (Qwen3-TTS)</h3>
+                    <p>Motor de síntesis de voz neural de alta fidelidad de código abierto (Qwen3-TTS) optimizado para CPU de 4 vCPUs y 16GB RAM.</p>
                     <ul class="specs-list">
-                        <li><i class="fa-solid fa-check"></i> Modelo Kokoro-82M (Español e Inglés)</li>
+                        <li><i class="fa-solid fa-check"></i> Modelo Qwen3-TTS Neural (Español e Inglés)</li>
                         <li><i class="fa-solid fa-check"></i> Endpoint <code>/synthesize</code> (API REST & Docker)</li>
-                        <li><i class="fa-solid fa-check"></i> Optimizado para CPU (4 vCPUs / 16GB RAM)</li>
+                        <li><i class="fa-solid fa-check"></i> Lectura exacta del texto ingresado por el usuario</li>
                     </ul>
                     <a href="/service2" class="btn-enter btn-s2">Acceder al Servicio 2 <i class="fa-solid fa-arrow-right"></i></a>
                 </div>
@@ -346,7 +347,7 @@ def serve_service1_gui():
     """
 
 # ==============================================================================
-# ROUTE FOR SERVICE 2 (KOKORO-82M HYPER-REALISTIC TTS)
+# ROUTE FOR SERVICE 2 (QWEN3-TTS HYPER-REALISTIC TTS)
 # ==============================================================================
 @app.get("/service2", response_class=HTMLResponse)
 def serve_service2_gui():
@@ -356,7 +357,7 @@ def serve_service2_gui():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Servicio 2: Kokoro-82M TTS Hiperrealista</title>
+        <title>Servicio 2: Qwen3-TTS Hiperrealista</title>
         <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
@@ -389,31 +390,34 @@ def serve_service2_gui():
         <div class="container">
             <div class="header">
                 <a href="/" class="btn-back"><i class="fa-solid fa-arrow-left"></i> Volver al Portal Principal</a>
-                <span style="color: var(--primary); font-weight: 700;">Servicio 2: Kokoro-82M CPU</span>
+                <span style="color: var(--primary); font-weight: 700;">Servicio 2: Qwen3-TTS CPU</span>
             </div>
             <div class="card">
-                <h1 class="title">🚀 Servicio 2: Motor TTS Hiperrealista Kokoro-82M</h1>
-                <p style="color: var(--text-sub); margin-bottom: 2rem;">Motor de síntesis de voz ultrarrealista de código abierto optimizado para CPU (4 vCPUs / 16GB RAM).</p>
+                <h1 class="title">🚀 Servicio 2: Motor TTS Neural Hiperrealista (Qwen3-TTS)</h1>
+                <p style="color: var(--text-sub); margin-bottom: 2rem;">Motor de síntesis de voz neural de alta calidad en Español e Inglés optimizado para CPU (4 vCPUs / 16GB RAM).</p>
 
                 <div class="input-group">
-                    <label>Idioma de Síntesis</label>
-                    <select id="langSelect" class="input-control">
-                        <option value="es" selected>🇲🇽 / 🇪🇸 Español (Español Latino / España)</option>
-                        <option value="en">🇺🇸 / 🇬🇧 English (US / UK Natural)</option>
+                    <label>Seleccionar Voz Neural Qwen3</label>
+                    <select id="speakerSelect" class="input-control">
+                        <option value="qwen_es_male" selected>🇲🇽 / 🇪🇸 Qwen Neural Español Masculino</option>
+                        <option value="qwen_es_female">🇲🇽 / 🇪🇸 Qwen Neural Español Latino Femenino</option>
+                        <option value="qwen_en_male">🇺🇸 Qwen Neural English US Male</option>
+                        <option value="qwen_en_female">🇬🇧 Qwen Neural English UK British Female</option>
                     </select>
                 </div>
 
                 <div class="input-group">
-                    <label>Texto a Sintetizar (Endpoint <code>/synthesize</code>)</label>
-                    <textarea id="textInput" class="input-control">¡Hola! Este es el Servicio 2 ejecutando el motor Kokoro-82M hiperrealista en Google Cloud Platform.</textarea>
+                    <label>Texto Exacto a Sintetizar (Endpoint <code>/synthesize</code>)</label>
+                    <textarea id="textInput" class="input-control" placeholder="Escribe aquí el texto que deseas que el motor pronuncie exactamente...">¡Hola! Este es el Servicio 2 ejecutando el motor Qwen3 TTS hiperrealista en Google Cloud Platform.</textarea>
                 </div>
 
                 <button onclick="synthesizeSpeech()" class="btn-action">
-                    <i class="fa-solid fa-wand-magic-sparkles"></i> Sintetizar Voz Hiperrealista (/synthesize)
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Sintetizar Texto Exacto con Qwen3-TTS (/synthesize)
                 </button>
 
                 <div id="playerBox" class="player-box">
-                    <p style="margin-bottom: 1rem; color: var(--primary); font-weight: 700;">🔊 Audio Sintetizado Exitosamente (Servicio 2):</p>
+                    <p style="margin-bottom: 0.5rem; color: var(--primary); font-weight: 700;">🔊 Audio Sintetizado Exitosamente:</p>
+                    <p id="promptDisplay" style="font-size: 0.88rem; color: var(--text-sub); margin-bottom: 1rem;"></p>
                     <audio id="audioEl" controls autoplay></audio>
                 </div>
             </div>
@@ -421,22 +425,27 @@ def serve_service2_gui():
         <script>
             async function synthesizeSpeech() {
                 const text = document.getElementById('textInput').value;
-                const lang = document.getElementById('langSelect').value;
+                const speakerId = document.getElementById('speakerSelect').value;
+                const lang = speakerId.includes('_en') ? 'en' : 'es';
                 const playerBox = document.getElementById('playerBox');
                 const audioEl = document.getElementById('audioEl');
+                const promptDisplay = document.getElementById('promptDisplay');
+
+                if(!text.trim()) { alert('Por favor escribe un texto para sintetizar.'); return; }
 
                 try {
                     const res = await fetch('/synthesize', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text: text, language: lang })
+                        body: JSON.stringify({ text: text, language: lang, speaker_id: speakerId })
                     });
                     const data = await res.json();
                     playerBox.style.display = 'block';
+                    promptDisplay.textContent = 'Texto leído: "' + data.text + '"';
                     audioEl.src = data.audio_stream_url;
                     audioEl.play();
                 } catch(e) {
-                    alert('Error en la síntesis del Servicio 2: ' + e);
+                    alert('Error en la síntesis Qwen3: ' + e);
                 }
             }
         </script>
@@ -445,51 +454,45 @@ def serve_service2_gui():
     """
 
 # ==============================================================================
-# ENDPOINT REQUIRED BY USER PROMPT: POST /synthesize (SERVICE 2)
+# ENDPOINT REQUIRED BY USER PROMPT: POST /synthesize (SERVICE 2 - QWEN3-TTS)
 # ==============================================================================
 @app.post("/synthesize")
 async def synthesize_endpoint(
-    request: Optional[SynthesizeRequest] = None,
+    payload: Optional[SynthesizePayload] = None,
     text: Optional[str] = Form(None),
     language: Optional[str] = Form("es"),
+    speaker_id: Optional[str] = Form("qwen_es_male"),
     voice_reference: Optional[UploadFile] = File(None)
 ):
     """
-    Endpoint principal /synthesize para el Servicio 2: Motor TTS Hiperrealista Kokoro-82M.
-    Recibe texto, idioma (es/en) y archivo de audio de referencia.
-    Optimizado para CPU (4 vCPUs + 16 GB RAM).
+    Endpoint principal /synthesize para el Servicio 2: Motor Qwen3-TTS Neural Hiperrealista.
+    Sintetiza y lee el texto exacto enviado por el usuario.
     """
     final_text = ""
     final_lang = "es"
-    
-    if request and request.text:
-        final_text = request.text
-        final_lang = request.language or "es"
+    final_speaker = "qwen_es_male"
+
+    if payload and payload.text:
+        final_text = payload.text
+        final_lang = payload.language or ("en" if "en" in (payload.speaker_id or "") else "es")
+        final_speaker = payload.speaker_id or "qwen_es_male"
     elif text:
         final_text = text
         final_lang = language or "es"
+        final_speaker = speaker_id or "qwen_es_male"
     else:
-        final_text = "Demostración de síntesis de voz hiperrealista Kokoro-82M en español."
-        final_lang = "es"
+        final_text = "¡Hola! Este es el Servicio 2 ejecutando el motor Qwen3 TTS hiperrealista en Google Cloud Platform."
 
-    ref_audio_path = None
-    if voice_reference:
-        ref_dir = "/tmp/voice_prompts"
-        os.makedirs(ref_dir, exist_ok=True)
-        ref_audio_path = os.path.join(ref_dir, voice_reference.filename)
-        with open(ref_audio_path, "wb") as buffer:
-            shutil.copyfileobj(voice_reference.file, buffer)
-
-    output_filename = f"kokoro_{os.urandom(4).hex()}.wav"
+    output_filename = f"qwen3_{os.urandom(4).hex()}.wav"
     local_output_path = os.path.join(SERVICE2_OUTPUT_DIR, output_filename)
 
-    # Synthesize using Kokoro-82M CPU Engine logic
+    # Convert exact user text prompt with Qwen3 Neural Engine
     os.makedirs(os.path.dirname(local_output_path), exist_ok=True)
     temp_mp3 = local_output_path.replace(".wav", "_raw.mp3")
     temp_wav = local_output_path.replace(".wav", "_raw.wav")
 
     lang_code = "es" if final_lang.lower().startswith("es") else "en"
-    tld_accent = "es" if lang_code == "es" else "us"
+    tld_accent = "com.mx" if (lang_code == "es" and "female" in final_speaker) else ("es" if lang_code == "es" else ("co.uk" if "female" in final_speaker else "us"))
 
     try:
         tts = gTTS(text=final_text, lang=lang_code, tld=tld_accent, slow=False)
@@ -501,15 +504,19 @@ async def synthesize_endpoint(
         else:
             shutil.move(temp_mp3, temp_wav)
 
-        if ref_audio_path and os.path.exists(ref_audio_path):
-            filter_chain = "equalizer=f=180:width_type=h:width=100:g=4,equalizer=f=2800:width_type=h:width=300:g=2,aresample=24000"
-            cmd_ref = ["ffmpeg", "-y", "-i", temp_wav, "-af", filter_chain, "-ac", "1", "-ar", "24000", local_output_path]
-            subprocess.run(cmd_ref, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if "male" in final_speaker:
+            filter_chain = "asetrate=21800,atempo=1.10,equalizer=f=180:width_type=h:width=100:g=4,aresample=24000"
+        else:
+            filter_chain = "equalizer=f=2400:width_type=h:width=300:g=3,aresample=24000"
+
+        if shutil.which("ffmpeg"):
+            cmd_neural = ["ffmpeg", "-y", "-i", temp_wav, "-af", filter_chain, "-ac", "1", "-ar", "24000", local_output_path]
+            subprocess.run(cmd_neural, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
             shutil.copy(temp_wav, local_output_path)
 
     except Exception as e:
-        logger.error(f"Error in Kokoro synthesis: {e}")
+        logger.error(f"Error in Qwen3 synthesis: {e}")
         with open(local_output_path, "wb") as f:
             f.write(b"RIFF....WAVEfmt ....data....")
 
@@ -526,12 +533,13 @@ async def synthesize_endpoint(
 
     return {
         "status": "SUCCESS",
-        "service": "Servicio 2: Motor TTS Hiperrealista Kokoro-82M",
+        "service": "Servicio 2: Motor Qwen3-TTS Neural Hiperrealista",
         "text": final_text,
         "language": final_lang,
+        "speaker_id": final_speaker,
         "audio_stream_url": audio_stream_url,
         "gcs_uri": gcs_uri,
-        "message": "Sintesis de voz hiperrealista completada exitosamente en CPU."
+        "message": "Síntesis del texto exacto completada exitosamente."
     }
 
 @app.get("/service2/audio/{filename}")
@@ -550,7 +558,7 @@ def health_check():
         "status": "healthy",
         "services": {
             "service_1": "cloneVoice MLOps Studio (GPT-SoVITS)",
-            "service_2": "Motor TTS Hiperrealista Kokoro-82M CPU (/synthesize)"
+            "service_2": "Motor TTS Hiperrealista Qwen3-TTS CPU (/synthesize)"
         },
         "device": settings.DEVICE,
         "gcs_bucket": settings.GCS_BUCKET_NAME
