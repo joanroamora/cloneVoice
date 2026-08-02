@@ -21,9 +21,7 @@ class AcousticVoiceCloner:
         """
         logger.info(f"Extracting neural speaker profile for '{voice_id}' from {audio_path}")
         
-        f0_hz = 125.0 # Default pitch
-        pitch_ratio = 0.65
-        gender = "male"
+        f0_hz = 125.0 # Default male/neutral pitch
         
         try:
             if os.path.exists(audio_path):
@@ -37,12 +35,9 @@ class AcousticVoiceCloner:
                         samples = struct.unpack(f"<{len(raw_data)//2}h", raw_data)
                         sample_count = len(samples)
                         
-                        # Calculate Zero Crossing Rate (ZCR) for pitch detection
                         zero_crossings = 0
-                        energy = 0
                         for i in range(1, len(samples), nchannels):
                             s = samples[i]
-                            energy += abs(s)
                             if (s >= 0 and samples[i-nchannels] < 0) or (s < 0 and samples[i-nchannels] >= 0):
                                 zero_crossings += 1
                                 
@@ -54,25 +49,13 @@ class AcousticVoiceCloner:
         except Exception as e:
             logger.warning(f"Error parsing WAV header for pitch extraction: {e}")
 
-        # Determine speaker gender and pitch ratio relative to standard female base (200Hz)
-        if f0_hz < 165.0:
-            gender = "male"
-            # Pitch ratio range for male speakers: 0.58 - 0.75
-            pitch_ratio = round(f0_hz / 195.0, 3)
-            pitch_ratio = max(0.55, min(0.78, pitch_ratio))
-        else:
-            gender = "female"
-            # Pitch ratio range for female speakers: 0.85 - 1.25
-            pitch_ratio = round(f0_hz / 195.0, 3)
-            pitch_ratio = max(0.85, min(1.25, pitch_ratio))
-
+        gender = "male" if f0_hz < 165.0 else "female"
+        
         profile = {
             "voice_id": voice_id,
             "f0_pitch_hz": round(f0_hz, 1),
-            "pitch_ratio": pitch_ratio,
             "gender": gender,
-            "chest_resonance_gain_db": 6 if gender == "male" else 1,
-            "formant_shift_semitones": -5 if gender == "male" else 0
+            "chest_resonance_gain_db": 12 if gender == "male" else 2
         }
         
         profile_path = f"/tmp/models/{voice_id}/speaker_profile.json"
@@ -80,7 +63,7 @@ class AcousticVoiceCloner:
         with open(profile_path, "w") as f:
             json.dump(profile, f, indent=2)
             
-        logger.info(f"Speaker Profile for '{voice_id}': F0={f0_hz:.1f}Hz, Pitch Ratio={pitch_ratio}, Gender={gender}")
+        logger.info(f"Speaker Profile for '{voice_id}': F0={f0_hz:.1f}Hz, Gender={gender}")
         return profile
 
     def get_speaker_profile(self, voice_id: str) -> dict:
@@ -93,49 +76,29 @@ class AcousticVoiceCloner:
             except Exception:
                 pass
                 
-        # Default heuristics for voice IDs (e.g. joan, joan_v1, male names -> male pitch)
         voice_lower = voice_id.lower()
         if any(name in voice_lower for name in ["joan", "pedro", "alex", "carlos", "juan", "man", "male"]):
-            return {"voice_id": voice_id, "f0_pitch_hz": 120.0, "pitch_ratio": 0.65, "gender": "male", "chest_resonance_gain_db": 6}
+            return {"voice_id": voice_id, "f0_pitch_hz": 120.0, "gender": "male"}
         else:
-            return {"voice_id": voice_id, "f0_pitch_hz": 195.0, "pitch_ratio": 0.95, "gender": "female", "chest_resonance_gain_db": 1}
+            return {"voice_id": voice_id, "f0_pitch_hz": 195.0, "gender": "female"}
 
     def adapt_voice_cloning(self, input_wav_path: str, output_wav_path: str, voice_id: str) -> str:
         """
         Executes speaker voice conversion:
         - Pitch transposition (transposing fundamental frequency F0 to match speaker)
-        - Formant warping (vocal tract resonance modeling)
-        - Equalization & Timbre matching (chest voice harmonics boost for male, clarity for female)
+        - Formant warping & chest resonance boost
         """
         profile = self.get_speaker_profile(voice_id)
-        pitch_ratio = profile.get("pitch_ratio", 0.65)
         gender = profile.get("gender", "male")
-        chest_gain = profile.get("chest_resonance_gain_db", 5)
         
-        logger.info(f"Performing voice conversion for '{voice_id}' (Gender: {gender}, Pitch ratio: {pitch_ratio})...")
+        logger.info(f"Performing voice conversion for '{voice_id}' (Gender: {gender})...")
         
-        new_rate = int(24000 * pitch_ratio)
-        tempo_comp = max(0.5, min(2.0, round(1.0 / pitch_ratio, 3)))
-        
-        # Build multi-band vocal formant & timbre filter chain
         if gender == "male":
-            # Male voice cloning: lower pitch + boost chest voice (110Hz-250Hz) + attenuate high female formants
-            filter_chain = (
-                f"asetrate={new_rate},"
-                f"atempo={tempo_comp},"
-                f"equalizer=f=120:width_type=h:width=100:g={chest_gain},"
-                f"equalizer=f=250:width_type=h:width=150:g=4,"
-                f"equalizer=f=3200:width_type=h:width=500:g=-5,"
-                f"aresample=24000"
-            )
+            # Male voice cloning: shift pitch down 10 semitones (asetrate=12500), compensate tempo, boost chest voice (110Hz)
+            filter_chain = "asetrate=12500,atempo=1.92,lowpass=f=3500,equalizer=f=110:width_type=h:width=80:g=12,aresample=24000"
         else:
-            # Female voice cloning: preserve clear formants + treble clarity
-            filter_chain = (
-                f"asetrate={new_rate},"
-                f"atempo={tempo_comp},"
-                f"equalizer=f=2400:width_type=h:width=400:g=3,"
-                f"aresample=24000"
-            )
+            # Female voice cloning: preserve high formants and clarity
+            filter_chain = "equalizer=f=2400:width_type=h:width=400:g=3,aresample=24000"
         
         cmd = [
             "ffmpeg", "-y",
