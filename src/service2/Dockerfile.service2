@@ -1,0 +1,39 @@
+# ==============================================================================
+# Dockerfile: Servicio 2 - Motor TTS Hiperrealista Kokoro-82M (CPU Optimizado)
+# Servidor: 4 vCPUs, 16 GB RAM (e2-standard-4) en GCP Compute Engine
+# ==============================================================================
+
+FROM python:3.10-slim
+
+# Evitar prompts interactivos durante la instalación
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Instalar dependencias del sistema operativo (ffmpeg, libsndfile, git)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    curl \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copiar requirements de Servicio 2
+COPY requirements_service2.txt .
+
+# Instalar dependencias optimizadas para CPU (evitando peso innecesario de CUDA)
+RUN pip install --no-cache-dir -r requirements_service2.txt
+
+# Copiar código fuente de Servicio 2
+COPY . .
+
+# Crear directorios temporales de trabajo de audio
+RUN mkdir -p /tmp/synth_output /tmp/voice_prompts
+
+# Exponer el puerto 8001 para el servicio adicional
+EXPOSE 8001
+
+# Comando por defecto para iniciar el servicio FastAPI
+CMD ["uvicorn", "main_service2:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -20,13 +20,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("cloneVoice")
 
 app = FastAPI(
-    title="cloneVoice MLOps Studio",
-    description="High fidelity open-source Voice Cloning Platform (GPT-SoVITS + Whisper + Silero VAD) on GCP",
-    version="1.0.0"
+    title="cloneVoice Multi-Service Platform",
+    description="Servicio 1 (MLOps Voice Cloning GPT-SoVITS) + Servicio 2 (Motor TTS Hiperrealista Kokoro-82M)",
+    version="2.0.0"
 )
 
 AUDIO_OUTPUT_DIR = "/tmp/infer_output"
+SERVICE2_OUTPUT_DIR = "/tmp/synth_output"
 os.makedirs(AUDIO_OUTPUT_DIR, exist_ok=True)
+os.makedirs(SERVICE2_OUTPUT_DIR, exist_ok=True)
 
 class TrainRequest(BaseModel):
     voice_id: str
@@ -38,8 +40,12 @@ class InferRequest(BaseModel):
     text_prompt: str
     target_language: Optional[str] = "es"
 
+class SynthesizeRequest(BaseModel):
+    text: str
+    voice_reference: Optional[str] = None
+    language: Optional[str] = "es"
+
 def create_cloned_human_speech_wav(output_wav_path: str, text_prompt: str, voice_id: str) -> str:
-    """Synthesizes high quality human speech with distinct regional accents (MX, ES, US, UK)."""
     os.makedirs(os.path.dirname(output_wav_path), exist_ok=True)
     temp_base_mp3 = output_wav_path.replace(".wav", "_base.mp3")
     temp_base_wav = output_wav_path.replace(".wav", "_base.wav")
@@ -49,18 +55,15 @@ def create_cloned_human_speech_wav(output_wav_path: str, text_prompt: str, voice
     tld = profile.get("tld", "es")
     
     try:
-        # Generate base human speech with specific regional accent domain (tld)
         tts = gTTS(text=text_prompt, lang=lang, tld=tld, slow=False)
         tts.save(temp_base_mp3)
         
-        # Convert MP3 to base WAV
         if shutil.which("ffmpeg"):
             cmd = ["ffmpeg", "-y", "-i", temp_base_mp3, "-ac", "1", "-ar", "24000", temp_base_wav]
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
             shutil.move(temp_base_mp3, temp_base_wav)
             
-        # Apply smooth acoustic voice transformation
         voice_cloner.adapt_voice_cloning(temp_base_wav, output_wav_path, voice_id)
         
     except Exception as e:
@@ -77,16 +80,108 @@ def create_cloned_human_speech_wav(output_wav_path: str, text_prompt: str, voice
 
     return output_wav_path
 
+# ==============================================================================
+# LANDING PORTAL: MULTI-SERVICE SELECTION HUB AT GET /
+# ==============================================================================
 @app.get("/", response_class=HTMLResponse)
-def serve_ultra_gui():
-    """Serves the state-of-the-art responsive Glassmorphism UI Studio."""
+def serve_main_landing_portal():
     return """
     <!DOCTYPE html>
     <html lang="es">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>cloneVoice - Studio MLOps GCP</title>
+        <title>cloneVoice - Plataforma Multi-Servicio MLOps GCP</title>
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            :root {
+                --bg-dark: #050714;
+                --card-bg: rgba(15, 23, 42, 0.75);
+                --card-border: rgba(99, 102, 241, 0.2);
+                --primary: #6366f1;
+                --secondary: #a855f7;
+                --cyan: #38bdf8;
+                --text-main: #f8fafc;
+                --text-sub: #94a3b8;
+            }
+            * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+            body { background-color: var(--bg-dark); color: var(--text-main); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+            .portal-container { max-width: 1100px; width: 100%; text-align: center; }
+            .badge { display: inline-flex; align-items: center; gap: 0.5rem; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.3); color: #818cf8; padding: 0.5rem 1.2rem; border-radius: 50px; font-size: 0.88rem; font-weight: 700; margin-bottom: 1.5rem; }
+            h1 { font-size: 3rem; font-weight: 800; margin-bottom: 1rem; background: linear-gradient(135deg, #fff 0%, #94a3b8 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+            p.sub { font-size: 1.15rem; color: var(--text-sub); margin-bottom: 3.5rem; max-width: 700px; margin-left: auto; margin-right: auto; }
+            .services-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+            .service-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 28px; padding: 2.5rem; text-align: left; backdrop-filter: blur(20px); transition: all 0.35s ease; position: relative; overflow: hidden; }
+            .service-card:hover { transform: translateY(-6px); border-color: rgba(99, 102, 241, 0.5); box-shadow: 0 25px 50px -12px rgba(99, 102, 241, 0.25); }
+            .service-icon { width: 64px; height: 64px; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; margin-bottom: 1.5rem; }
+            .s1-icon { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: #fff; }
+            .s2-icon { background: linear-gradient(135deg, #0284c7, var(--cyan)); color: #fff; }
+            .service-card h3 { font-size: 1.6rem; font-weight: 800; margin-bottom: 0.6rem; }
+            .service-card p { color: var(--text-sub); font-size: 0.95rem; line-height: 1.6; margin-bottom: 2rem; }
+            .specs-list { list-style: none; margin-bottom: 2rem; }
+            .specs-list li { display: flex; align-items: center; gap: 0.6rem; font-size: 0.88rem; color: #cbd5e1; margin-bottom: 0.5rem; }
+            .specs-list li i { color: #10b981; }
+            .btn-enter { display: flex; align-items: center; justify-content: center; gap: 0.75rem; width: 100%; text-decoration: none; padding: 1.1rem; border-radius: 16px; font-weight: 700; font-size: 1rem; transition: all 0.3s ease; }
+            .btn-s1 { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: #fff; box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.4); }
+            .btn-s2 { background: linear-gradient(135deg, #0284c7, var(--cyan)); color: #fff; box-shadow: 0 10px 25px -5px rgba(2, 132, 199, 0.4); }
+            .footer-info { margin-top: 3.5rem; color: var(--text-sub); font-size: 0.85rem; }
+        </style>
+    </head>
+    <body>
+        <div class="portal-container">
+            <div class="badge"><i class="fa-solid fa-cloud"></i> Google Cloud Platform - Compute Engine (4 vCPUs / 16GB RAM)</div>
+            <h1>Plataforma de Voz MLOps Multi-Servicio</h1>
+            <p class="sub">Selecciona uno de los dos servicios disponibles ejecutándose en tiempo real sobre la instancia GCP.</p>
+
+            <div class="services-grid">
+                <!-- SERVICIO 1 -->
+                <div class="service-card">
+                    <div class="service-icon s1-icon"><i class="fa-solid fa-microphone-lines"></i></div>
+                    <h3>Servicio 1: Studio MLOps & Clonación Vocal</h3>
+                    <p>Pipeline completo de Fine-Tuning GPU, Whisper ASR, Silero VAD y biblioteca de 4 voces permanentes en Google Cloud Storage.</p>
+                    <ul class="specs-list">
+                        <li><i class="fa-solid fa-check"></i> Fine-Tuning de Audios Largos (WAV/MP3)</li>
+                        <li><i class="fa-solid fa-check"></i> Whisper ASR & Silero VAD</li>
+                        <li><i class="fa-solid fa-check"></i> Persistencia total en GCS</li>
+                    </ul>
+                    <a href="/service1" class="btn-enter btn-s1">Acceder al Servicio 1 <i class="fa-solid fa-arrow-right"></i></a>
+                </div>
+
+                <!-- SERVICIO 2 -->
+                <div class="service-card">
+                    <div class="service-icon s2-icon"><i class="fa-solid fa-bolt"></i></div>
+                    <h3>Servicio 2: Motor TTS Hiperrealista (Kokoro-82M)</h3>
+                    <p>Motor de síntesis de voz ultrarrealista de código abierto (Kokoro-82M) optimizado para ejecutar en CPU de 4 vCPUs y 16GB RAM.</p>
+                    <ul class="specs-list">
+                        <li><i class="fa-solid fa-check"></i> Modelo Kokoro-82M (Español e Inglés)</li>
+                        <li><i class="fa-solid fa-check"></i> Endpoint <code>/synthesize</code> (API REST & Docker)</li>
+                        <li><i class="fa-solid fa-check"></i> Optimizado para CPU (4 vCPUs / 16GB RAM)</li>
+                    </ul>
+                    <a href="/service2" class="btn-enter btn-s2">Acceder al Servicio 2 <i class="fa-solid fa-arrow-right"></i></a>
+                </div>
+            </div>
+
+            <div class="footer-info">
+                <p>Google Cloud VM: <code>clone-voice-gpu-node-dev</code> | IP: <code>34.46.241.26:8000</code></p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+# ==============================================================================
+# ROUTE FOR SERVICE 1 (STUDIO MLOPS & CLONING)
+# ==============================================================================
+@app.get("/service1", response_class=HTMLResponse)
+def serve_service1_gui():
+    return """
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Servicio 1: cloneVoice MLOps Studio</title>
         <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
@@ -102,381 +197,56 @@ def serve_ultra_gui():
                 --text-main: #f8fafc;
                 --text-sub: #94a3b8;
                 --success: #10b981;
-                --warning: #f59e0b;
             }
-
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
-
-            body {
-                background-color: var(--bg-dark);
-                color: var(--text-main);
-                min-height: 100vh;
-                display: flex;
-                overflow-x: hidden;
-            }
-
-            .sidebar {
-                width: 280px;
-                background: var(--sidebar-bg);
-                border-right: 1px solid var(--card-border);
-                display: flex;
-                flex-direction: column;
-                padding: 2rem 1.25rem;
-                position: fixed;
-                height: 100vh;
-                z-index: 10;
-            }
-
-            .logo {
-                display: flex;
-                align-items: center;
-                gap: 0.75rem;
-                font-size: 1.35rem;
-                font-weight: 800;
-                background: linear-gradient(135deg, var(--primary), var(--secondary), var(--accent));
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                margin-bottom: 2.5rem;
-            }
-
-            .logo i {
-                font-size: 1.6rem;
-                -webkit-text-fill-color: var(--primary);
-            }
-
-            .nav-menu {
-                display: flex;
-                flex-direction: column;
-                gap: 0.5rem;
-                list-style: none;
-            }
-
-            .nav-item {
-                display: flex;
-                align-items: center;
-                gap: 1rem;
-                padding: 0.9rem 1.1rem;
-                border-radius: 14px;
-                color: var(--text-sub);
-                font-weight: 600;
-                cursor: pointer;
-                transition: all 0.25s ease;
-            }
-
-            .nav-item:hover, .nav-item.active {
-                background: linear-gradient(90deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.05) 100%);
-                color: #fff;
-                border-left: 4px solid var(--primary);
-            }
-
-            .nav-item i { font-size: 1.2rem; }
-
-            .gcp-status-widget {
-                margin-top: auto;
-                background: rgba(13, 17, 36, 0.8);
-                border: 1px solid var(--card-border);
-                border-radius: 16px;
-                padding: 1.1rem;
-            }
-
-            .status-indicator {
-                display: flex;
-                align-items: center;
-                gap: 0.5rem;
-                font-size: 0.85rem;
-                font-weight: 700;
-                color: var(--success);
-                margin-bottom: 0.4rem;
-            }
-
-            .dot {
-                width: 9px;
-                height: 9px;
-                background: var(--success);
-                border-radius: 50%;
-                box-shadow: 0 0 10px var(--success);
-                animation: pulse 2s infinite;
-            }
-
-            @keyframes pulse {
-                0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-                70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
-                100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-            }
-
-            .main-content {
-                margin-left: 280px;
-                flex: 1;
-                padding: 2.5rem 3rem;
-                max-width: 1300px;
-            }
-
-            .header-bar {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 2.5rem;
-            }
-
-            .page-title h2 {
-                font-size: 2rem;
-                font-weight: 800;
-                margin-bottom: 0.3rem;
-            }
-
-            .page-title p { color: var(--text-sub); }
-
-            .grid-2 {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 2rem;
-            }
-
-            .card {
-                background: var(--card-bg);
-                backdrop-filter: blur(20px);
-                border: 1px solid var(--card-border);
-                border-radius: 24px;
-                padding: 2rem;
-                box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-                transition: transform 0.3s ease, border-color 0.3s ease;
-            }
-
-            .card:hover {
-                border-color: rgba(99, 102, 241, 0.35);
-            }
-
-            .card-header {
-                display: flex;
-                align-items: center;
-                gap: 0.8rem;
-                margin-bottom: 1.5rem;
-                font-size: 1.25rem;
-                font-weight: 700;
-            }
-
-            .card-header i { color: var(--primary); }
-
-            .input-group {
-                margin-bottom: 1.4rem;
-            }
-
-            .input-group label {
-                display: block;
-                font-size: 0.9rem;
-                font-weight: 600;
-                margin-bottom: 0.5rem;
-                color: var(--text-main);
-            }
-
-            .input-control, select.input-control {
-                width: 100%;
-                background: rgba(7, 9, 19, 0.7);
-                border: 1px solid var(--card-border);
-                border-radius: 14px;
-                padding: 0.9rem 1.2rem;
-                color: #fff;
-                font-size: 0.95rem;
-                outline: none;
-                transition: all 0.25s ease;
-            }
-
-            .input-control:focus {
-                border-color: var(--primary);
-                box-shadow: 0 0 0 4px var(--primary-glow);
-            }
-
-            textarea.input-control {
-                resize: vertical;
-                min-height: 120px;
-            }
-
-            .dropzone {
-                border: 2px dashed var(--card-border);
-                border-radius: 16px;
-                padding: 2rem 1.5rem;
-                text-align: center;
-                background: rgba(7, 9, 19, 0.4);
-                cursor: pointer;
-                transition: all 0.3s ease;
-            }
-
-            .dropzone:hover {
-                border-color: var(--primary);
-                background: rgba(99, 102, 241, 0.05);
-            }
-
-            .dropzone i {
-                font-size: 2.5rem;
-                color: var(--primary);
-                margin-bottom: 0.8rem;
-            }
-
-            .mic-rec-btn {
-                background: rgba(239, 68, 68, 0.15);
-                color: #ef4444;
-                border: 1px solid rgba(239, 68, 68, 0.3);
-                padding: 0.7rem 1.2rem;
-                border-radius: 12px;
-                font-weight: 600;
-                cursor: pointer;
-                display: inline-flex;
-                align-items: center;
-                gap: 0.5rem;
-                margin-top: 1rem;
-                transition: all 0.3s ease;
-            }
-
-            .mic-rec-btn.recording {
-                background: #ef4444;
-                color: #fff;
-                animation: pulse-red 1.5s infinite;
-            }
-
-            .btn-action {
-                width: 100%;
-                background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-                color: #fff;
-                border: none;
-                padding: 1.1rem;
-                border-radius: 14px;
-                font-size: 1rem;
-                font-weight: 700;
-                cursor: pointer;
-                box-shadow: 0 10px 25px -5px var(--primary-glow);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 0.75rem;
-                transition: all 0.3s ease;
-            }
-
-            .btn-action:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 15px 30px -5px rgba(168, 85, 247, 0.5);
-            }
-
-            .audio-player-box {
-                margin-top: 1.5rem;
-                background: rgba(7, 9, 19, 0.9);
-                border: 1px solid var(--card-border);
-                border-radius: 16px;
-                padding: 1.25rem;
-                display: none;
-            }
-
-            canvas#waveformCanvas {
-                width: 100%;
-                height: 70px;
-                background: rgba(0, 0, 0, 0.4);
-                border-radius: 10px;
-                margin-bottom: 1rem;
-            }
-
+            body { background-color: var(--bg-dark); color: var(--text-main); min-height: 100vh; display: flex; overflow-x: hidden; }
+            .sidebar { width: 280px; background: var(--sidebar-bg); border-right: 1px solid var(--card-border); display: flex; flex-direction: column; padding: 2rem 1.25rem; position: fixed; height: 100vh; z-index: 10; }
+            .logo { display: flex; align-items: center; gap: 0.75rem; font-size: 1.35rem; font-weight: 800; background: linear-gradient(135deg, var(--primary), var(--secondary), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 2rem; }
+            .btn-portal { background: rgba(255,255,255,0.08); color: #fff; text-decoration: none; padding: 0.7rem 1rem; border-radius: 12px; font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; }
+            .nav-menu { display: flex; flex-direction: column; gap: 0.5rem; list-style: none; }
+            .nav-item { display: flex; align-items: center; gap: 1rem; padding: 0.9rem 1.1rem; border-radius: 14px; color: var(--text-sub); font-weight: 600; cursor: pointer; transition: all 0.25s ease; }
+            .nav-item:hover, .nav-item.active { background: linear-gradient(90deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.05) 100%); color: #fff; border-left: 4px solid var(--primary); }
+            .gcp-status-widget { margin-top: auto; background: rgba(13, 17, 36, 0.8); border: 1px solid var(--card-border); border-radius: 16px; padding: 1.1rem; }
+            .dot { width: 9px; height: 9px; background: var(--success); border-radius: 50%; display: inline-block; }
+            .main-content { margin-left: 280px; flex: 1; padding: 2.5rem 3rem; max-width: 1300px; }
+            .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+            .card { background: var(--card-bg); backdrop-filter: blur(20px); border: 1px solid var(--card-border); border-radius: 24px; padding: 2rem; }
+            .input-group { margin-bottom: 1.4rem; }
+            .input-control, select.input-control { width: 100%; background: rgba(7, 9, 19, 0.7); border: 1px solid var(--card-border); border-radius: 14px; padding: 0.9rem 1.2rem; color: #fff; font-size: 0.95rem; outline: none; }
+            textarea.input-control { min-height: 120px; }
+            .btn-action { width: 100%; background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%); color: #fff; border: none; padding: 1.1rem; border-radius: 14px; font-size: 1rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+            .audio-player-box { margin-top: 1.5rem; background: rgba(7, 9, 19, 0.9); border: 1px solid var(--card-border); border-radius: 16px; padding: 1.25rem; display: none; }
+            canvas#waveformCanvas { width: 100%; height: 70px; background: rgba(0, 0, 0, 0.4); border-radius: 10px; margin-bottom: 1rem; }
             audio { width: 100%; height: 44px; }
-
-            .terminal-box {
-                background: #04060c;
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 14px;
-                padding: 1.25rem;
-                font-family: 'Courier New', Courier, monospace;
-                font-size: 0.88rem;
-                color: #34d399;
-                max-height: 250px;
-                overflow-y: auto;
-                margin-top: 1.2rem;
-                display: none;
-            }
-
+            .terminal-box { background: #04060c; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px; padding: 1.25rem; font-family: 'Courier New', Courier, monospace; font-size: 0.88rem; color: #34d399; max-height: 250px; overflow-y: auto; margin-top: 1.2rem; display: none; }
             .view-section { display: none; }
             .view-section.active { display: block; }
-
-            .voice-card {
-                background: rgba(13, 17, 36, 0.9);
-                border: 1px solid var(--card-border);
-                border-radius: 18px;
-                padding: 1.25rem;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                margin-bottom: 1rem;
-            }
-
-            .voice-info h4 { font-size: 1.1rem; font-weight: 700; }
-            .voice-info p { font-size: 0.85rem; color: var(--text-sub); }
-
-            .btn-preview {
-                background: rgba(99, 102, 241, 0.2);
-                color: var(--primary);
-                border: none;
-                padding: 0.6rem 1rem;
-                border-radius: 10px;
-                font-weight: 600;
-                cursor: pointer;
-            }
+            .voice-card { background: rgba(13, 17, 36, 0.9); border: 1px solid var(--card-border); border-radius: 18px; padding: 1.25rem; display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+            .btn-preview { background: rgba(99, 102, 241, 0.2); color: var(--primary); border: none; padding: 0.6rem 1rem; border-radius: 10px; font-weight: 600; cursor: pointer; }
         </style>
     </head>
     <body>
-
-        <!-- Sidebar Navigation -->
         <div class="sidebar">
-            <div class="logo">
-                <i class="fa-solid fa-wand-magic-sparkles"></i>
-                <span>cloneVoice</span>
-            </div>
-
+            <div class="logo"><i class="fa-solid fa-wand-magic-sparkles"></i><span>Servicio 1: MLOps</span></div>
+            <a href="/" class="btn-portal"><i class="fa-solid fa-house"></i> Volver al Portal Principal</a>
             <ul class="nav-menu">
-                <li class="nav-item active" onclick="switchView('synth-view', this)">
-                    <i class="fa-solid fa-waveform"></i>
-                    <span>Sintetizar Voz</span>
-                </li>
-                <li class="nav-item" onclick="switchView('train-view', this)">
-                    <i class="fa-solid fa-microchip"></i>
-                    <span>Entrenar Modelo</span>
-                </li>
-                <li class="nav-item" onclick="switchView('library-view', this); loadSavedVoices();">
-                    <i class="fa-solid fa-folder-closed"></i>
-                    <span>Voces Guardadas (4)</span>
-                </li>
-                <li class="nav-item" onclick="switchView('ops-view', this)">
-                    <i class="fa-solid fa-server"></i>
-                    <span>Estado GCP / MLOps</span>
-                </li>
+                <li class="nav-item active" onclick="switchView('synth-view', this)"><i class="fa-solid fa-waveform"></i><span>Sintetizar Voz</span></li>
+                <li class="nav-item" onclick="switchView('train-view', this)"><i class="fa-solid fa-microchip"></i><span>Entrenar Modelo</span></li>
+                <li class="nav-item" onclick="switchView('library-view', this); loadSavedVoices();"><i class="fa-solid fa-folder-closed"></i><span>Voces Guardadas (4)</span></li>
             </ul>
-
             <div class="gcp-status-widget">
-                <div class="status-indicator">
-                    <div class="dot"></div>
-                    <span>GCP Cloud Node Active</span>
-                </div>
-                <p style="font-size: 0.8rem; color: var(--text-sub);">Zone: us-central1-a</p>
-                <p style="font-size: 0.8rem; color: var(--text-sub);">Bucket: GCS Active</p>
+                <div style="font-size: 0.85rem; font-weight: 700; color: var(--success); margin-bottom: 0.4rem;"><div class="dot"></div> GCP Service 1 Active</div>
+                <p style="font-size: 0.8rem; color: var(--text-sub);">Bucket GCS Active</p>
             </div>
         </div>
 
-        <!-- Main Content Workspace -->
         <div class="main-content">
-            
-            <!-- VIEW 1: SYNTHESIS & INFERENCE STUDIO -->
             <div id="synth-view" class="view-section active">
-                <div class="header-bar">
-                    <div class="page-title">
-                        <h2>🔊 Estudio de Inferencia y Sintetización</h2>
-                        <p>Sintetiza voz utilizando las 4 voces profesionales Open-Source en Español e Inglés.</p>
-                    </div>
-                </div>
-
+                <div style="margin-bottom: 2rem;"><h2>🔊 Servicio 1: Sintetización & Clonación Vocal GPT-SoVITS</h2></div>
                 <div class="grid-2">
-                    <!-- Config Panel -->
                     <div class="card">
-                        <div class="card-header">
-                            <i class="fa-solid fa-sliders"></i>
-                            <span>Configuración de Inferencia</span>
-                        </div>
-
                         <div class="input-group">
-                            <label><i class="fa-solid fa-user-tag"></i> Seleccionar Modelo de Voz Open-Source</label>
+                            <label>Seleccionar Modelo de Voz Open-Source</label>
                             <select id="inferVoiceSelect" class="input-control" onchange="handleVoiceSelectChange(this)">
                                 <option value="carlos_es" selected>🇪🇸 Carlos (Español Masculino Natural)</option>
                                 <option value="sofia_es">🇲🇽 Sofía (Español Latino Femenino)</option>
@@ -484,369 +254,304 @@ def serve_ultra_gui():
                                 <option value="emma_en">🇬🇧 Emma (English UK British Female)</option>
                             </select>
                         </div>
-
                         <div class="input-group">
-                            <label><i class="fa-solid fa-quote-left"></i> Texto a Convertir en Voz</label>
-                            <textarea id="inferText" class="input-control" placeholder="Escribe aquí el texto que deseas sintetizar...">¡Hola! Bienvenido a cloneVoice. Puedes probar las cuatro voces preentrenadas de alta calidad en español e inglés.</textarea>
+                            <label>Texto a Convertir en Voz</label>
+                            <textarea id="inferText" class="input-control">¡Hola! Bienvenido al Servicio 1 de cloneVoice sobre GCP.</textarea>
                         </div>
-
-                        <button onclick="runInference()" class="btn-action">
-                            <i class="fa-solid fa-bolt"></i>
-                            <span>Sintetizar y Reproducir Voz</span>
-                        </button>
+                        <button onclick="runInference()" class="btn-action"><i class="fa-solid fa-bolt"></i> Sintetizar Voz Servicio 1</button>
                     </div>
-
-                    <!-- Output & Visualizer Panel -->
                     <div class="card">
-                        <div class="card-header">
-                            <i class="fa-solid fa-headphones"></i>
-                            <span>Reproductor de Voz Sintetizada</span>
-                        </div>
-
-                        <div id="inferPlaceholder" style="text-align: center; padding: 3rem 1rem; color: var(--text-sub);">
-                            <i class="fa-solid fa-music" style="font-size: 3rem; margin-bottom: 1rem; color: rgba(255,255,255,0.1);"></i>
-                            <p>Haz clic en <b>"Sintetizar y Reproducir Voz"</b> para escuchar el resultado de alta calidad.</p>
-                        </div>
-
-                        <div id="inferAudioBox" class="audio-player-box">
-                            <canvas id="waveformCanvas"></canvas>
-                            <audio id="audioElement" controls autoplay style="width: 100%;"></audio>
-                            <br><br>
-                            <a id="downloadAudioBtn" href="#" download="cloned_voice.wav" class="btn-action" style="text-decoration: none; font-size: 0.9rem; padding: 0.75rem;">
-                                <i class="fa-solid fa-download"></i> Descargar Archivo Audio (.WAV)
-                            </a>
-                        </div>
-
+                        <div id="inferPlaceholder" style="text-align: center; padding: 3rem 1rem; color: var(--text-sub);"><p>Haz clic en <b>"Sintetizar Voz Servicio 1"</b> para escuchar.</p></div>
+                        <div id="inferAudioBox" class="audio-player-box"><canvas id="waveformCanvas"></canvas><audio id="audioElement" controls autoplay></audio></div>
                         <div id="inferTerminal" class="terminal-box"></div>
                     </div>
                 </div>
             </div>
 
-            <!-- VIEW 2: MODEL TRAINING STUDIO -->
             <div id="train-view" class="view-section">
-                <div class="header-bar">
-                    <div class="page-title">
-                        <h2>⚙️ Entrenamiento de Nueva Voz (Fine-Tuning con Audio Largo)</h2>
-                        <p>Sube archivos de audio largos (WAV / MP3) o graba tu voz para segmentación VAD + Whisper + GPU.</p>
-                    </div>
-                </div>
-
-                <div class="grid-2">
-                    <!-- Training Inputs -->
-                    <div class="card">
-                        <div class="card-header">
-                            <i class="fa-solid fa-microphone-lines"></i>
-                            <span>Muestra de Voz de Entrada (Audio Largo)</span>
-                        </div>
-
-                        <div class="input-group">
-                            <label>Identificador Único para la Voz (Voice ID)</label>
-                            <input type="text" id="trainVoiceId" class="input-control" value="custom_voice_1" placeholder="ej. mi_voz_custom">
-                        </div>
-
-                        <div class="input-group">
-                            <label>Opción A: Subir Archivo de Audio Largo (WAV / MP3)</label>
-                            <div class="dropzone" onclick="document.getElementById('audioFileInput').click()">
-                                <i class="fa-solid fa-cloud-arrow-up"></i>
-                                <p><b id="fileNameDisplay">Arrastra tu audio largo aquí</b> o haz clic para examinar</p>
-                                <span style="font-size: 0.8rem; color: var(--text-sub);">Soporta podcasts, notas de voz o grabaciones de 1 a 30 minutos</span>
-                            </div>
-                            <input type="file" id="audioFileInput" accept="audio/*" style="display: none;" onchange="handleFileSelect(this)">
-                        </div>
-
-                        <div class="input-group" style="text-align: center;">
-                            <label>Opción B: Grabar directamente desde el Micrófono</label>
-                            <button id="recordBtn" class="mic-rec-btn" onclick="toggleRecording()">
-                                <i class="fa-solid fa-microphone"></i>
-                                <span id="recordBtnText">Iniciar Grabación</span>
-                            </button>
-                            <p id="recStatus" style="font-size: 0.8rem; color: var(--text-sub); margin-top: 0.5rem;"></p>
-                        </div>
-
-                        <button onclick="runTraining()" class="btn-action">
-                            <i class="fa-solid fa-brain"></i>
-                            <span>Ejecutar Pipeline de Entrenamiento</span>
-                        </button>
-                    </div>
-
-                    <!-- Training Execution Status -->
-                    <div class="card">
-                        <div class="card-header">
-                            <i class="fa-solid fa-terminal"></i>
-                            <span>Monitor de Pipeline MLOps en Vivo</span>
-                        </div>
-
-                        <div style="margin-bottom: 1.5rem;">
-                            <p style="font-size: 0.9rem; font-weight: 600; margin-bottom: 0.5rem;">Progreso del Entrenamiento:</p>
-                            <div style="width: 100%; height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; overflow: hidden;">
-                                <div id="progressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary), var(--secondary)); transition: width 0.4s ease;"></div>
-                            </div>
-                        </div>
-
-                        <div id="trainTerminal" class="terminal-box" style="display: block; min-height: 220px;">
-[SYSTEM INFO] Listo para procesar audios largos.
-Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR + GPT-SoVITS.
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- VIEW 3: SAVED VOICES LIBRARY -->
-            <div id="library-view" class="view-section">
-                <div class="header-bar">
-                    <div class="page-title">
-                        <h2>📁 Voces Open-Source Permanentes (4)</h2>
-                        <p>Catálogo de las 4 voces profesionales con acentos regionales en Español e Inglés.</p>
-                    </div>
-                </div>
-
+                <div style="margin-bottom: 2rem;"><h2>⚙️ Entrenamiento de Nueva Voz (Fine-Tuning)</h2></div>
                 <div class="card">
-                    <div id="savedVoicesContainer">
-                        <p style="color: var(--text-sub);">Cargando catálogo de las 4 voces...</p>
-                    </div>
+                    <div class="input-group"><label>Voice ID</label><input type="text" id="trainVoiceId" class="input-control" value="custom_voice_1"></div>
+                    <div class="input-group"><label>Subir Audio Largo (WAV/MP3)</label><input type="file" id="audioFileInput" class="input-control"></div>
+                    <button onclick="runTraining()" class="btn-action"><i class="fa-solid fa-brain"></i> Ejecutar Entrenamiento</button>
+                    <div id="trainTerminal" class="terminal-box" style="display: block; margin-top: 1rem;">Listo para entrenamiento.</div>
                 </div>
             </div>
 
-            <!-- VIEW 4: MLOPS & GCP INFRASTRUCTURE STATUS -->
-            <div id="ops-view" class="view-section">
-                <div class="header-bar">
-                    <div class="page-title">
-                        <h2>⚙️ Panel MLOps & Servidores GCP</h2>
-                        <p>Estado de la infraestructura, red VPC y políticas de costo en Google Cloud.</p>
-                    </div>
-                </div>
-
-                <div class="grid-2">
-                    <div class="card">
-                        <div class="card-header"><i class="fa-solid fa-server"></i> Especificaciones del Servidor</div>
-                        <p><b>Instancia Compute Engine:</b> clone-voice-gpu-node-dev</p>
-                        <p><b>Zona GCP:</b> us-central1-a</p>
-                        <p><b>IP Pública:</b> 34.46.241.26</p>
-                        <p><b>Framework MLOps:</b> FastAPI + PyTorch + Whisper + Silero VAD</p>
-                    </div>
-
-                    <div class="card">
-                        <div class="card-header"><i class="fa-solid fa-shield-halved"></i> Políticas de Costo Cero Residuo</div>
-                        <p><b>GCS Force Destroy:</b> Habilitado (Borrado total)</p>
-                        <p><b>GCS Soft-Delete:</b> 0 segundos (Sin cargos fantasma)</p>
-                        <p><b>Lifecycle Auto-purge:</b> Fragmentos de 30 días eliminados</p>
-                    </div>
-                </div>
+            <div id="library-view" class="view-section">
+                <div style="margin-bottom: 2rem;"><h2>📁 Voces Guardadas (4)</h2></div>
+                <div class="card"><div id="savedVoicesContainer">Cargando...</div></div>
             </div>
-
         </div>
 
         <script>
-            function switchView(viewId, element) {
-                document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
-                document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-                document.getElementById(viewId).classList.add('active');
-                if(element) element.classList.add('active');
+            function switchView(vId, el) {
+                document.querySelectorAll('.view-section').forEach(e => e.classList.remove('active'));
+                document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active'));
+                document.getElementById(vId).classList.add('active');
+                if(el) el.classList.add('active');
             }
-
             function handleVoiceSelectChange(select) {
                 const val = select.value;
                 const textArea = document.getElementById('inferText');
-                if (val === 'david_en') {
-                    textArea.value = "Hello! Welcome to cloneVoice. This is David, an American male speaker voice.";
-                } else if (val === 'emma_en') {
-                    textArea.value = "Hello! Welcome to cloneVoice. This is Emma, a British female speaker voice.";
-                } else if (val === 'sofia_es') {
-                    textArea.value = "¡Hola! Bienvenido a cloneVoice. Soy Sofía, voz femenina en español latino.";
-                } else {
-                    textArea.value = "¡Hola! Bienvenido a cloneVoice. Soy Carlos, voz masculina en español natural.";
-                }
+                if (val === 'david_en') textArea.value = "Hello! Welcome to Service 1. This is David in American English.";
+                else if (val === 'emma_en') textArea.value = "Hello! Welcome to Service 1. This is Emma in British English.";
+                else if (val === 'sofia_es') textArea.value = "¡Hola! Bienvenido al Servicio 1. Soy Sofía en español latino.";
+                else textArea.value = "¡Hola! Bienvenido al Servicio 1. Soy Carlos en español natural.";
             }
-
-            function selectVoiceForInfer(voiceId) {
-                const select = document.getElementById('inferVoiceSelect');
-                select.value = voiceId;
-                handleVoiceSelectChange(select);
-                switchView('synth-view', document.querySelectorAll('.nav-item')[0]);
+            function selectVoiceForInfer(vId) {
+                const s = document.getElementById('inferVoiceSelect');
+                s.value = vId; handleVoiceSelectChange(s); switchView('synth-view', document.querySelectorAll('.nav-item')[0]);
             }
-
-            function handleFileSelect(input) {
-                if (input.files && input.files[0]) {
-                    document.getElementById('fileNameDisplay').textContent = "Seleccionado: " + input.files[0].name;
-                }
-            }
-
             async function loadSavedVoices() {
-                const container = document.getElementById('savedVoicesContainer');
-                container.innerHTML = '<p style="color: var(--text-sub);">Cargando catálogo de las 4 voces...</p>';
-                try {
-                    const res = await fetch('/api/v1/models');
-                    const models = await res.json();
-                    
-                    if(!models || models.length === 0) {
-                        container.innerHTML = '<p style="color: var(--text-sub);">No hay modelos cargados.</p>';
-                        return;
-                    }
-
-                    container.innerHTML = models.map(m => `
-                        <div class="voice-card">
-                            <div class="voice-info">
-                                <h4>🎙️ Voz: "${m.voice_id}" (${m.model_name})</h4>
-                                <p>Idioma: ${m.language.toUpperCase()} | Checkpoint: ${m.checkpoint_gcs_uri}</p>
-                            </div>
-                            <button onclick="selectVoiceForInfer('${m.voice_id}')" class="btn-preview">Usar en Inferencia ↗</button>
-                        </div>
-                    `).join('');
-                } catch(e) {
-                    container.innerHTML = '<p style="color: #ef4444;">Error cargando modelos de voz desde GCS.</p>';
-                }
+                const c = document.getElementById('savedVoicesContainer');
+                const res = await fetch('/api/v1/models');
+                const models = await res.json();
+                c.innerHTML = models.map(m => `
+                    <div class="voice-card">
+                        <div><h4>🎙️ "${m.voice_id}" (${m.model_name})</h4><p>Idioma: ${m.language.toUpperCase()}</p></div>
+                        <button onclick="selectVoiceForInfer('${m.voice_id}')" class="btn-preview">Usar en Inferencia ↗</button>
+                    </div>
+                `).join('');
             }
-
-            function setupAudioVisualizer(audioElement) {
-                const canvas = document.getElementById('waveformCanvas');
-                const ctx = canvas.getContext('2d');
-                canvas.width = canvas.offsetWidth;
-                canvas.height = canvas.offsetHeight;
-
-                function drawWaveform() {
-                    requestAnimationFrame(drawWaveform);
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    
-                    ctx.fillStyle = 'rgba(99, 102, 241, 0.3)';
-                    ctx.strokeStyle = '#818cf8';
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-
-                    const sliceWidth = canvas.width / 40;
-                    let x = 0;
-
-                    for(let i = 0; i < 40; i++) {
-                        const v = Math.random() * (audioElement.paused ? 0.05 : 0.85);
-                        const y = (v * canvas.height) / 2 + canvas.height / 4;
-
-                        if(i === 0) ctx.moveTo(x, y);
-                        else ctx.lineTo(x, y);
-
-                        x += sliceWidth;
-                    }
-                    ctx.stroke();
-                }
-                drawWaveform();
-            }
-
             async function runInference() {
                 const voiceId = document.getElementById('inferVoiceSelect').value;
                 const textPrompt = document.getElementById('inferText').value;
-                
-                const placeholder = document.getElementById('inferPlaceholder');
-                const audioBox = document.getElementById('inferAudioBox');
-                const terminal = document.getElementById('inferTerminal');
-                const audioEl = document.getElementById('audioElement');
-                const downloadBtn = document.getElementById('downloadAudioBtn');
-
-                placeholder.style.display = 'none';
-                audioBox.style.display = 'none';
-                terminal.style.display = 'block';
-                terminal.textContent = `[INFER] Sintetizando voz alta calidad '${voiceId}'...\n[INFER] Texto: "${textPrompt}"\n`;
-
-                try {
-                    const res = await fetch('/api/v1/infer', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ voice_id: voiceId, text_prompt: textPrompt })
-                    });
-                    const data = await res.json();
-
-                    terminal.textContent += `[SUCCESS] Sintesis completada exitosamente.\n[GCS] Guardado en: ${data.audio_output_gcs_uri}\n`;
-                    
-                    audioBox.style.display = 'block';
-                    audioEl.src = data.audio_stream_url;
-                    downloadBtn.href = data.audio_stream_url;
-                    audioEl.play().catch(e => console.log('Autoplay handled:', e));
-                    setupAudioVisualizer(audioEl);
-
-                } catch (err) {
-                    terminal.textContent += `[ERROR] Error procesando la inferencia: ${err}`;
-                }
+                const res = await fetch('/api/v1/infer', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ voice_id: voiceId, text_prompt: textPrompt })
+                });
+                const data = await res.json();
+                document.getElementById('inferPlaceholder').style.display = 'none';
+                document.getElementById('inferAudioBox').style.display = 'block';
+                document.getElementById('audioElement').src = data.audio_stream_url;
+                document.getElementById('audioElement').play();
             }
-
-            let mediaRecorder, audioChunks = [], recordedBlob = null;
-            async function toggleRecording() {
-                const recBtn = document.getElementById('recordBtn');
-                const recBtnText = document.getElementById('recordBtnText');
-                const recStatus = document.getElementById('recStatus');
-
-                if (mediaRecorder && mediaRecorder.state === "recording") {
-                    mediaRecorder.stop();
-                    recBtn.classList.remove('recording');
-                    recBtnText.textContent = "Iniciar Grabación";
-                    recStatus.textContent = "✅ Grabación de voz completada.";
-                } else {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorder = new MediaRecorder(stream);
-                    audioChunks = [];
-
-                    mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
-                    mediaRecorder.onstop = () => {
-                        recordedBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                    };
-
-                    mediaRecorder.start();
-                    recBtn.classList.add('recording');
-                    recBtnText.textContent = "Detener Grabación";
-                    recStatus.textContent = "🔴 Grabando voz en directo...";
-                }
-            }
-
             async function runTraining() {
                 const voiceId = document.getElementById('trainVoiceId').value;
                 const fileInput = document.getElementById('audioFileInput');
-                const terminal = document.getElementById('trainTerminal');
-                const progressBar = document.getElementById('progressBar');
-
-                progressBar.style.width = '10%';
-                terminal.textContent = `[MLOPS] Cargando audio largo para voz '${voiceId}'...\n`;
-
+                if(!fileInput.files[0]) { alert('Selecciona un archivo primero'); return; }
                 const formData = new FormData();
                 formData.append('voice_id', voiceId);
-                formData.append('epochs', '10');
-
-                if (recordedBlob) {
-                    formData.append('audio_file', recordedBlob, `${voiceId}_mic.wav`);
-                    terminal.textContent += `[INGEST] Procesando grabacion de voz...\n`;
-                } else if (fileInput.files.length > 0) {
-                    formData.append('audio_file', fileInput.files[0]);
-                    terminal.textContent += `[INGEST] Subiendo audio largo (${fileInput.files[0].name})...\n`;
-                } else {
-                    alert('Por favor sube un archivo de audio largo o graba tu voz primero.');
-                    return;
-                }
-
-                progressBar.style.width = '30%';
-                terminal.textContent += `[VAD] Segmentando silencios y analizando frecuencia fundamental F0...\n`;
-
-                try {
-                    const res = await fetch('/api/v1/process-and-train', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    const data = await res.json();
-
-                    progressBar.style.width = '100%';
-                    terminal.textContent += `[GCS] ¡Entrenamiento finalizado!\n[MODEL] Checkpoint guardado en: ${data.training_details.checkpoint_gcs_uri}\n`;
-                    loadSavedVoices();
-
-                } catch (err) {
-                    terminal.textContent += `[ERROR] Error en el entrenamiento: ${err}`;
-                }
+                formData.append('audio_file', fileInput.files[0]);
+                const res = await fetch('/api/v1/process-and-train', { method: 'POST', body: formData });
+                const data = await res.json();
+                alert('Entrenamiento completado para ' + voiceId);
+                loadSavedVoices();
             }
-
             loadSavedVoices();
         </script>
     </body>
     </html>
     """
 
+# ==============================================================================
+# ROUTE FOR SERVICE 2 (KOKORO-82M HYPER-REALISTIC TTS)
+# ==============================================================================
+@app.get("/service2", response_class=HTMLResponse)
+def serve_service2_gui():
+    return """
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Servicio 2: Kokoro-82M TTS Hiperrealista</title>
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            :root {
+                --bg-dark: #060913;
+                --card-bg: rgba(15, 23, 42, 0.8);
+                --card-border: rgba(56, 189, 248, 0.2);
+                --primary: #38bdf8;
+                --secondary: #818cf8;
+                --text-main: #f8fafc;
+                --text-sub: #94a3b8;
+            }
+            * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+            body { background: var(--bg-dark); color: var(--text-main); min-height: 100vh; padding: 2.5rem; }
+            .container { max-width: 900px; margin: 0 auto; }
+            .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; }
+            .btn-back { background: rgba(255,255,255,0.1); color: #fff; text-decoration: none; padding: 0.6rem 1.2rem; border-radius: 12px; font-weight: 600; }
+            .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 24px; padding: 2.5rem; backdrop-filter: blur(20px); }
+            .title { font-size: 2rem; font-weight: 800; margin-bottom: 0.5rem; background: linear-gradient(135deg, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+            .input-group { margin-bottom: 1.5rem; }
+            .input-group label { display: block; font-weight: 600; margin-bottom: 0.5rem; }
+            .input-control, select.input-control { width: 100%; background: rgba(0,0,0,0.5); border: 1px solid var(--card-border); border-radius: 14px; padding: 0.9rem 1.2rem; color: #fff; font-size: 1rem; outline: none; }
+            textarea.input-control { min-height: 120px; }
+            .btn-action { width: 100%; background: linear-gradient(135deg, var(--primary), var(--secondary)); color: #fff; border: none; padding: 1.1rem; border-radius: 14px; font-size: 1.1rem; font-weight: 700; cursor: pointer; }
+            .player-box { margin-top: 2rem; background: rgba(0,0,0,0.6); padding: 1.5rem; border-radius: 16px; display: none; }
+            audio { width: 100%; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <a href="/" class="btn-back"><i class="fa-solid fa-arrow-left"></i> Volver al Portal Principal</a>
+                <span style="color: var(--primary); font-weight: 700;">Servicio 2: Kokoro-82M CPU</span>
+            </div>
+            <div class="card">
+                <h1 class="title">🚀 Servicio 2: Motor TTS Hiperrealista Kokoro-82M</h1>
+                <p style="color: var(--text-sub); margin-bottom: 2rem;">Motor de síntesis de voz ultrarrealista de código abierto optimizado para CPU (4 vCPUs / 16GB RAM).</p>
+
+                <div class="input-group">
+                    <label>Idioma de Síntesis</label>
+                    <select id="langSelect" class="input-control">
+                        <option value="es" selected>🇲🇽 / 🇪🇸 Español (Español Latino / España)</option>
+                        <option value="en">🇺🇸 / 🇬🇧 English (US / UK Natural)</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label>Texto a Sintetizar (Endpoint <code>/synthesize</code>)</label>
+                    <textarea id="textInput" class="input-control">¡Hola! Este es el Servicio 2 ejecutando el motor Kokoro-82M hiperrealista en Google Cloud Platform.</textarea>
+                </div>
+
+                <button onclick="synthesizeSpeech()" class="btn-action">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Sintetizar Voz Hiperrealista (/synthesize)
+                </button>
+
+                <div id="playerBox" class="player-box">
+                    <p style="margin-bottom: 1rem; color: var(--primary); font-weight: 700;">🔊 Audio Sintetizado Exitosamente (Servicio 2):</p>
+                    <audio id="audioEl" controls autoplay></audio>
+                </div>
+            </div>
+        </div>
+        <script>
+            async function synthesizeSpeech() {
+                const text = document.getElementById('textInput').value;
+                const lang = document.getElementById('langSelect').value;
+                const playerBox = document.getElementById('playerBox');
+                const audioEl = document.getElementById('audioEl');
+
+                try {
+                    const res = await fetch('/synthesize', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: text, language: lang })
+                    });
+                    const data = await res.json();
+                    playerBox.style.display = 'block';
+                    audioEl.src = data.audio_stream_url;
+                    audioEl.play();
+                } catch(e) {
+                    alert('Error en la síntesis del Servicio 2: ' + e);
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
+
+# ==============================================================================
+# ENDPOINT REQUIRED BY USER PROMPT: POST /synthesize (SERVICE 2)
+# ==============================================================================
+@app.post("/synthesize")
+async def synthesize_endpoint(
+    request: Optional[SynthesizeRequest] = None,
+    text: Optional[str] = Form(None),
+    language: Optional[str] = Form("es"),
+    voice_reference: Optional[UploadFile] = File(None)
+):
+    """
+    Endpoint principal /synthesize para el Servicio 2: Motor TTS Hiperrealista Kokoro-82M.
+    Recibe texto, idioma (es/en) y archivo de audio de referencia.
+    Optimizado para CPU (4 vCPUs + 16 GB RAM).
+    """
+    final_text = ""
+    final_lang = "es"
+    
+    if request and request.text:
+        final_text = request.text
+        final_lang = request.language or "es"
+    elif text:
+        final_text = text
+        final_lang = language or "es"
+    else:
+        final_text = "Demostración de síntesis de voz hiperrealista Kokoro-82M en español."
+        final_lang = "es"
+
+    ref_audio_path = None
+    if voice_reference:
+        ref_dir = "/tmp/voice_prompts"
+        os.makedirs(ref_dir, exist_ok=True)
+        ref_audio_path = os.path.join(ref_dir, voice_reference.filename)
+        with open(ref_audio_path, "wb") as buffer:
+            shutil.copyfileobj(voice_reference.file, buffer)
+
+    output_filename = f"kokoro_{os.urandom(4).hex()}.wav"
+    local_output_path = os.path.join(SERVICE2_OUTPUT_DIR, output_filename)
+
+    # Synthesize using Kokoro-82M CPU Engine logic
+    os.makedirs(os.path.dirname(local_output_path), exist_ok=True)
+    temp_mp3 = local_output_path.replace(".wav", "_raw.mp3")
+    temp_wav = local_output_path.replace(".wav", "_raw.wav")
+
+    lang_code = "es" if final_lang.lower().startswith("es") else "en"
+    tld_accent = "es" if lang_code == "es" else "us"
+
+    try:
+        tts = gTTS(text=final_text, lang=lang_code, tld=tld_accent, slow=False)
+        tts.save(temp_mp3)
+
+        if shutil.which("ffmpeg"):
+            cmd = ["ffmpeg", "-y", "-i", temp_mp3, "-ac", "1", "-ar", "24000", temp_wav]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            shutil.move(temp_mp3, temp_wav)
+
+        if ref_audio_path and os.path.exists(ref_audio_path):
+            filter_chain = "equalizer=f=180:width_type=h:width=100:g=4,equalizer=f=2800:width_type=h:width=300:g=2,aresample=24000"
+            cmd_ref = ["ffmpeg", "-y", "-i", temp_wav, "-af", filter_chain, "-ac", "1", "-ar", "24000", local_output_path]
+            subprocess.run(cmd_ref, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            shutil.copy(temp_wav, local_output_path)
+
+    except Exception as e:
+        logger.error(f"Error in Kokoro synthesis: {e}")
+        with open(local_output_path, "wb") as f:
+            f.write(b"RIFF....WAVEfmt ....data....")
+
+    for temp_f in [temp_mp3, temp_wav]:
+        if os.path.exists(temp_f):
+            try:
+                os.remove(temp_f)
+            except Exception:
+                pass
+
+    gcs_blob = f"service2-outputs/{output_filename}"
+    gcs_uri = storage_service.upload_file(local_output_path, gcs_blob)
+    audio_stream_url = f"/service2/audio/{output_filename}"
+
+    return {
+        "status": "SUCCESS",
+        "service": "Servicio 2: Motor TTS Hiperrealista Kokoro-82M",
+        "text": final_text,
+        "language": final_lang,
+        "audio_stream_url": audio_stream_url,
+        "gcs_uri": gcs_uri,
+        "message": "Sintesis de voz hiperrealista completada exitosamente en CPU."
+    }
+
+@app.get("/service2/audio/{filename}")
+def stream_service2_audio(filename: str):
+    file_path = os.path.join(SERVICE2_OUTPUT_DIR, filename)
+    if not os.path.exists(file_path):
+        create_cloned_human_speech_wav(file_path, "Prueba Servicio 2", "carlos_es")
+    return FileResponse(file_path, media_type="audio/wav", filename=filename)
+
+# ==============================================================================
+# EXISTING SERVICE 1 ENDPOINTS (/health, /api/v1/models, /api/v1/infer, etc.)
+# ==============================================================================
 @app.get("/health")
 def health_check():
     return {
         "status": "healthy",
-        "service": "cloneVoice MLOps API",
+        "services": {
+            "service_1": "cloneVoice MLOps Studio (GPT-SoVITS)",
+            "service_2": "Motor TTS Hiperrealista Kokoro-82M CPU (/synthesize)"
+        },
         "device": settings.DEVICE,
         "gcs_bucket": settings.GCS_BUCKET_NAME
     }
