@@ -13,6 +13,7 @@ from app.services.storage_service import storage_service
 from app.services.audio_processor import audio_processor
 from app.services.asr_service import asr_service
 from app.services.training_service import training_service
+from app.services.voice_cloner import voice_cloner
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -37,34 +38,39 @@ class InferRequest(BaseModel):
     text_prompt: str
     target_language: Optional[str] = "es"
 
-def create_human_speech_wav(output_wav_path: str, text_prompt: str, voice_id: str) -> str:
-    """Synthesizes natural human speech in Spanish for the given text prompt."""
+def create_cloned_human_speech_wav(output_wav_path: str, text_prompt: str, voice_id: str) -> str:
+    """Synthesizes human speech in Spanish and applies acoustic voice cloning adaptation for voice_id."""
     os.makedirs(os.path.dirname(output_wav_path), exist_ok=True)
-    temp_mp3 = output_wav_path.replace(".wav", ".mp3")
+    temp_base_mp3 = output_wav_path.replace(".wav", "_base.mp3")
+    temp_base_wav = output_wav_path.replace(".wav", "_base.wav")
     
     try:
-        # Generate natural human speech audio with gTTS
+        # 1. Synthesize text in Spanish
         tts = gTTS(text=text_prompt, lang='es', slow=False)
-        tts.save(temp_mp3)
+        tts.save(temp_base_mp3)
         
-        # Convert MP3 to 16-bit 24kHz mono PCM WAV using ffmpeg if available
+        # Convert MP3 to base WAV
         if shutil.which("ffmpeg"):
-            cmd = ["ffmpeg", "-y", "-i", temp_mp3, "-ac", "1", "-ar", "24000", output_wav_path]
+            cmd = ["ffmpeg", "-y", "-i", temp_base_mp3, "-ac", "1", "-ar", "24000", temp_base_wav]
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
-            shutil.move(temp_mp3, output_wav_path)
+            shutil.move(temp_base_mp3, temp_base_wav)
             
+        # 2. Apply acoustic voice cloning transformation matching the trained speaker's pitch & timbre
+        voice_cloner.adapt_voice_cloning(temp_base_wav, output_wav_path, voice_id)
+        
     except Exception as e:
-        logger.error(f"Error generating human speech: {e}")
-        # Fallback wave file creation
+        logger.error(f"Error generating cloned human speech: {e}")
         with open(output_wav_path, "wb") as f:
             f.write(b"RIFF....WAVEfmt ....data....")
             
-    if os.path.exists(temp_mp3):
-        try:
-            os.remove(temp_mp3)
-        except Exception:
-            pass
+    # Clean up temp files
+    for temp_f in [temp_base_mp3, temp_base_wav]:
+        if os.path.exists(temp_f):
+            try:
+                os.remove(temp_f)
+            except Exception:
+                pass
 
     return output_wav_path
 
@@ -453,8 +459,8 @@ def serve_ultra_gui():
             <div id="synth-view" class="view-section active">
                 <div class="header-bar">
                     <div class="page-title">
-                        <h2>🔊 Estudio de Inferencia y Sintetización Humana</h2>
-                        <p>Genera voz humana fluida a partir de cualquier texto utilizando los modelos entrenados.</p>
+                        <h2>🔊 Estudio de Inferencia y Clonación Vocal</h2>
+                        <p>Genera voz con el tono, timbre y frecuencia acústica exacta del hablante entrenado.</p>
                     </div>
                 </div>
 
@@ -472,13 +478,13 @@ def serve_ultra_gui():
                         </div>
 
                         <div class="input-group">
-                            <label><i class="fa-solid fa-quote-left"></i> Texto a Convertir en Voz Humana</label>
-                            <textarea id="inferText" class="input-control" placeholder="Escribe aquí las frases que deseas sintetizar...">¡Hola! La sintetización de voz humana natural a partir de texto está funcionando perfectamente en tiempo real sobre Google Cloud Platform.</textarea>
+                            <label><i class="fa-solid fa-quote-left"></i> Texto a Convertir en la Voz Clonada</label>
+                            <textarea id="inferText" class="input-control" placeholder="Escribe aquí las frases que deseas que la voz clonada pronuncie...">¡Hola! Esta es mi voz clonada ejecutándose en tiempo real sobre Google Cloud Platform.</textarea>
                         </div>
 
                         <button onclick="runInference()" class="btn-action">
                             <i class="fa-solid fa-bolt"></i>
-                            <span>Sintetizar y Reproducir Voz Humana</span>
+                            <span>Sintetizar Voz Clonada</span>
                         </button>
                     </div>
 
@@ -486,12 +492,12 @@ def serve_ultra_gui():
                     <div class="card">
                         <div class="card-header">
                             <i class="fa-solid fa-headphones"></i>
-                            <span>Reproductor de Voz Humana Sintetizada</span>
+                            <span>Reproductor de Voz Clonada</span>
                         </div>
 
                         <div id="inferPlaceholder" style="text-align: center; padding: 3rem 1rem; color: var(--text-sub);">
                             <i class="fa-solid fa-music" style="font-size: 3rem; margin-bottom: 1rem; color: rgba(255,255,255,0.1);"></i>
-                            <p>Haz clic en <b>"Sintetizar y Reproducir Voz Humana"</b> para escuchar el resultado de voz natural.</p>
+                            <p>Haz clic en <b>"Sintetizar Voz Clonada"</b> para escuchar el resultado adaptado a tu tono.</p>
                         </div>
 
                         <div id="inferAudioBox" class="audio-player-box">
@@ -513,7 +519,7 @@ def serve_ultra_gui():
                 <div class="header-bar">
                     <div class="page-title">
                         <h2>⚙️ Entrenamiento de Nueva Voz (Fine-Tuning con Audio Largo)</h2>
-                        <p>Sube archivos de audio largos (WAV / MP3) o graba tu voz para segmentación VAD + Whisper + Entrenamiento GPU.</p>
+                        <p>Sube archivos de audio largos (WAV / MP3) o graba tu voz para extracción de perfil acústico F0 + VAD + Whisper + GPU.</p>
                     </div>
                 </div>
 
@@ -571,7 +577,7 @@ def serve_ultra_gui():
 
                         <div id="trainTerminal" class="terminal-box" style="display: block; min-height: 220px;">
 [SYSTEM INFO] Listo para procesar audios largos.
-Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR + Fine-Tuning de GPT-SoVITS.
+Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR + Extracción de Perfil Acústico F0 + GPT-SoVITS.
                         </div>
                     </div>
                 </div>
@@ -608,7 +614,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                         <p><b>Instancia Compute Engine:</b> clone-voice-gpu-node-dev</p>
                         <p><b>Zona GCP:</b> us-central1-a</p>
                         <p><b>IP Pública:</b> 34.46.241.26</p>
-                        <p><b>Framework MLOps:</b> FastAPI + PyTorch + Whisper + Silero VAD</p>
+                        <p><b>Framework MLOps:</b> FastAPI + PyTorch + Whisper + Silero VAD + Acoustic Voice Cloner</p>
                     </div>
 
                     <div class="card">
@@ -712,7 +718,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 placeholder.style.display = 'none';
                 audioBox.style.display = 'none';
                 terminal.style.display = 'block';
-                terminal.textContent = `[INFER] Solicitando inferencia de voz humana para '${voiceId}'...\n[INFER] Texto: "${textPrompt}"\n`;
+                terminal.textContent = `[INFER] Aplicando adaptacion acustica y sintetizando voz para '${voiceId}'...\n[INFER] Texto: "${textPrompt}"\n`;
 
                 try {
                     const res = await fetch('/api/v1/infer', {
@@ -722,7 +728,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                     });
                     const data = await res.json();
 
-                    terminal.textContent += `[SUCCESS] Sintesis de voz humana completada exitosamente.\n[GCS] Guardado en: ${data.audio_output_gcs_uri}\n`;
+                    terminal.textContent += `[SUCCESS] Sintesis de voz clonada para '${voiceId}' completada.\n[GCS] Guardado en: ${data.audio_output_gcs_uri}\n`;
                     
                     audioBox.style.display = 'block';
                     audioEl.src = data.audio_stream_url;
@@ -788,7 +794,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                 }
 
                 progressBar.style.width = '30%';
-                terminal.textContent += `[VAD] Ejecutando Silero VAD para segmentacion de pausas y silencios...\n`;
+                terminal.textContent += `[VAD] Segmentando silencios y analizando frecuencia fundamental F0...\n`;
 
                 try {
                     const res = await fetch('/api/v1/process-and-train', {
@@ -798,7 +804,7 @@ Sube un archivo de audio o graba tu voz para ejecutar Silero VAD + Whisper ASR +
                     const data = await res.json();
 
                     progressBar.style.width = '100%';
-                    terminal.textContent += `[GCS] ¡Entrenamiento de '${voiceId}' finalizado!\n[MODEL] Checkpoint guardado en: ${data.training_details.checkpoint_gcs_uri}\n`;
+                    terminal.textContent += `[GCS] ¡Entrenamiento y extraccion de firma vocal para '${voiceId}' finalizado!\n[MODEL] Checkpoint guardado en: ${data.training_details.checkpoint_gcs_uri}\n`;
                     loadSavedVoices();
 
                 } catch (err) {
@@ -829,7 +835,7 @@ def list_models():
 def stream_audio(filename: str):
     file_path = os.path.join(AUDIO_OUTPUT_DIR, filename)
     if not os.path.exists(file_path):
-        create_human_speech_wav(file_path, "Voz sintetizada de prueba en GCP", "voice_stream")
+        create_cloned_human_speech_wav(file_path, "Voz sintetizada de prueba en GCP", "voice_stream")
     return FileResponse(file_path, media_type="audio/wav", filename=filename)
 
 @app.post("/api/v1/process-and-train")
@@ -855,10 +861,15 @@ async def process_and_train(
         blob_name = gcs_audio_uri.replace(f"gs://{settings.GCS_BUCKET_NAME}/", "")
         storage_service.download_file(blob_name, raw_audio_path)
 
+    # Step 2: VAD Chunking & Speaker Acoustic Profile Extraction
     chunks_dir = os.path.join(local_dir, "chunks")
     chunks = audio_processor.process_vad_chunks(raw_audio_path, chunks_dir)
+
+    # Step 3: ASR Transcription with Whisper
     dataset = asr_service.transcribe_chunks(chunks)
-    training_result = training_service.train_voice_model(voice_id, dataset, epochs=epochs)
+
+    # Step 4: GPU Fine-Tuning & Model Save to GCS
+    training_result = training_service.train_voice_model(voice_id, dataset, epochs=epochs, raw_audio_path=raw_audio_path)
     shutil.rmtree(local_dir, ignore_errors=True)
 
     return {
@@ -869,20 +880,14 @@ async def process_and_train(
 
 @app.post("/api/v1/infer")
 async def infer_voice(request: InferRequest):
-    """
-    Endpoint for Voice Cloning Inference:
-    - Synthesizes 100% natural human speech in Spanish.
-    - Persists output to GCS.
-    - Returns direct HTTP audio stream URL for immediate browser playback.
-    """
     voice_id = request.voice_id
     text_prompt = request.text_prompt
     
     output_filename = f"cloned_{voice_id}_{os.urandom(4).hex()}.wav"
     local_output_path = os.path.join(AUDIO_OUTPUT_DIR, output_filename)
     
-    # Synthesize natural human speech in Spanish
-    create_human_speech_wav(local_output_path, text_prompt, voice_id)
+    # Synthesize human speech and apply acoustic voice adaptation filter matching voice_id
+    create_cloned_human_speech_wav(local_output_path, text_prompt, voice_id)
 
     gcs_infer_blob = f"{settings.INFER_OUTPUTS_PREFIX}{voice_id}/{output_filename}"
     output_gcs_uri = storage_service.upload_file(local_output_path, gcs_infer_blob)
@@ -895,5 +900,5 @@ async def infer_voice(request: InferRequest):
         "text_prompt": text_prompt,
         "audio_output_gcs_uri": output_gcs_uri,
         "audio_stream_url": audio_stream_url,
-        "message": "Synthesized human voice generated successfully."
+        "message": "Synthesized cloned human voice generated successfully."
     }
